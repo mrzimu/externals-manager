@@ -41,7 +41,7 @@ def pos_int(value) -> str:
 
 
 parser = argparse.ArgumentParser(
-    prog="BOSS External Build",
+    prog="python3 main.py",
     description="Build BOSS external packages",
 )
 
@@ -97,7 +97,7 @@ install_prefix = Path(args.prefix).resolve()
 build_dir = Path(args.build_dir).resolve()
 patch_dir = (Path(__file__).parent / 'patches').resolve()
 
-if njobs != '' and njobs > os.cpu_count():
+if njobs != '' and int(njobs) > os.cpu_count():
     logger.warning(
         f"Number of processors to use is larger than the number of available processors, using {os.cpu_count()} instead")
     njobs = os.cpu_count()
@@ -234,6 +234,11 @@ for pkg_name in build_order:
 
     # Instantiate the package object
     tobuild_dict[pkg_name] = tobuild_dict[pkg_name](build_config, pre_env_cmds)
+
+# Check if there are packages with the same name
+if len(set([pkg.name for pkg in tobuild_dict.values()])) != len(tobuild_dict):
+    logger.error("There are packages with the same name!")
+    exit(1)
 
 # Build the packages
 for pkg_name in build_order:

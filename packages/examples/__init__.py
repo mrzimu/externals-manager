@@ -3,6 +3,11 @@ from .catch2 import Catch2_v3_5_4, Catch2_v3_7_1
 
 releases = {
     'releaseA': {
+        'fmt': Fmt_11_0_2,
+        'catch2': Catch2_v3_7_1
+    },
+
+    'releaseB': {
         'tobuild': {
             'fmt': Fmt_10_2_1,
             'catch2': Catch2_v3_5_4},
@@ -11,12 +16,7 @@ releases = {
             'catch2': []
         }
     },
-
-    'releaseB': {
-        'fmt': Fmt_11_0_2,
-        'catch2': Catch2_v3_7_1
-    },
-
+    
     'releaseC': {
         'fmt': Fmt_11_0_2,
         'catch2': Catch2_v3_5_4
