@@ -1,3 +1,8 @@
+_test
+.vscode
+.idea
+install
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

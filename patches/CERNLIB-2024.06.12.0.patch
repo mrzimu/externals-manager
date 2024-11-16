@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 49a6cb11..d7936e08 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -613,7 +613,7 @@ if(LINUX OR SunOS)
+   endif()
+   endif()
+   set(crypto ${OPENSSL_CRYPTO_LIBRARY})
+-  find_library(nsl NAMES nsl nsl2 REQUIRED)
++  find_library(nsl NAMES nsl nsl2 libnsl.so.3 libnsl.so.3.0.0 libnsl.so.1 REQUIRED)
+   message(STATUS "CERNLIB: nsl=${nsl}")
+   set(Xm Xm)
+   set(Xbae Xbae)
