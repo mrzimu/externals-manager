@@ -2,20 +2,24 @@ from core import BuildConfig, BasePackage
 
 
 class Catch2(BasePackage):
-    def __init__(self, build_config: BuildConfig, pre_env_cmds: list[str] = []) -> None:
+    def __init__(self, build_config: BuildConfig, pre_env_cmds=None) -> None:
         super().__init__(build_config, pre_env_cmds)
+
+        self.git_repo = 'https://github.com/catchorg/Catch2.git'
 
     @property
     def name(self) -> str: return 'Catch2'
 
     @property
-    def git_repo(self) -> str: return 'https://github.com/catchorg/Catch2.git'
-
-    @property
     def git_tag(self) -> str: return self.version
 
     def download(self) -> list[str]:
-        return [f'git clone --branch {self.git_tag} {self.git_repo} {self.source_dir}']
+        cmds = []
+        if self.source_dir.exists():
+            cmds += [f'rm -rvf {self.source_dir}']
+
+        cmds += [self.clone_git_repo(self.git_repo, self.git_tag)]
+        return cmds
 
     def patch(self) -> list[str]:
         return []
@@ -34,17 +38,15 @@ class Catch2(BasePackage):
         return []
 
     def setup_cmds(self) -> dict[str, list[str]]:
-        sh_cmds = [f"# {self.name}",
-                   f"export PATH={self.install_dir}/include:$PATH",
-                   f"export LD_LIBRARY_PATH={self.install_dir}/lib64:$LD_LIBRARY_PATH",
-                   f"export LIB={self.install_dir}/lib64:$LIB",
-                   f"export CMAKE_PREFIX_PATH={self.install_dir}/lib64/cmake/Catch2:$CMAKE_PREFIX_PATH"]
+        env_to_append: list[tuple[str, str]] = [
+            ("PATH", f"{self.install_dir}/include"),
+            ("LD_LIBRARY_PATH", f"{self.install_dir}/lib64"),
+            ("LIB", f"{self.install_dir}/lib64"),
+            ("CMAKE_PREFIX_PATH", f"{self.install_dir}/lib64/cmake/Catch2")
+        ]
 
-        csh_cmds = [f"# {self.name}",
-                    f'setenv PATH "{self.install_dir}/include:$PATH"',
-                    f'setenv LD_LIBRARY_PATH "{self.install_dir}/lib:$LD_LIBRARY_PATH"',
-                    f'setenv LIB "{self.install_dir}/lib:$LIB"',
-                    f'setenv CMAKE_PREFIX_PATH "{self.install_dir}/lib/cmake/Catch2:$CMAKE_PREFIX_PATH"']
+        sh_cmds = self.append_envvar(env_to_append, shell='sh')
+        csh_cmds = self.append_envvar(env_to_append, shell='csh')
 
         return {'sh': sh_cmds,
                 'csh': csh_cmds}

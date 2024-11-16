@@ -1,8 +1,7 @@
 _test
 .vscode
+.idea
 install
-patches
-packages
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

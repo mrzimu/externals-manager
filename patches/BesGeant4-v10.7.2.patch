@@ -1,0 +1,1575 @@
+diff --git a/source/geometry/solids/CSG/src/G4Trap.cc b/source/geometry/solids/CSG/src/G4Trap.cc
+index 3de1171c5b..474c556f6f 100644
+--- a/source/geometry/solids/CSG/src/G4Trap.cc
++++ b/source/geometry/solids/CSG/src/G4Trap.cc
+@@ -23,14 +23,32 @@
+ // * acceptance of all terms of the Geant4 Software license.          *
+ // ********************************************************************
+ //
++//
++// $Id: G4Trap.cc 107555 2017-11-22 15:26:59Z gcosmo $
++//
++// class G4Trap
++//
+ // Implementation for G4Trap class
+ //
+-// 21.03.95 P.Kent: Modified for `tolerant' geometry
+-// 09.09.96 V.Grichine: Final modifications before to commit
+-// 08.12.97 J.Allison: Added "nominal" constructor and method SetAllParameters
+-// 28.04.05 V.Grichine: new SurfaceNormal according to J.Apostolakis proposal
++// History:
++//
+ // 18.04.17 E.Tcherniaev: complete revision, speed-up
+-// --------------------------------------------------------------------
++// 23.09.16 E.Tcherniaev: use G4BoundingEnvelope for CalculateExtent(),
++//                      removed CreateRotatedVertices()
++// 28.04.05 V.Grichine: new SurfaceNormal according to J. Apostolakis proposal 
++// 26.04.05 V.Grichine: new SurfaceNormal is default 
++// 19.04.05 V.Grichine: bug fixed in G4Trap("name",G4ThreeVector[8] vp)
++// 12.12.04 V.Grichine: SurfaceNormal with edges/vertices 
++// 15.11.04 V.Grichine: bug fixed in G4Trap("name",G4ThreeVector[8] vp)
++// 13.12.99 V.Grichine: bug fixed in DistanceToIn(p,v)
++// 19.11.99 V.Grichine: kUndef was added to Eside enum
++// 04.06.99 S.Giani: Fixed CalculateExtent in rotated case. 
++// 08.12.97 J.Allison: Added "nominal" constructor and method SetAllParameters.
++// 01.11.96 V.Grichine: Costructor for Right Angular Wedge from STEP, G4Trd/Para
++// 09.09.96 V.Grichine: Final modifications before to commit
++// 21.03.95 P.Kent: Modified for `tolerant' geometry
++//
++///////////////////////////////////////////////////////////////////////////////
+ 
+ #include "G4Trap.hh"
+ 
+@@ -45,7 +63,7 @@
+ 
+ #include "G4VPVParameterisation.hh"
+ 
+-#include "G4QuickRand.hh"
++#include "Randomize.hh"
+ 
+ #include "G4VGraphicsScene.hh"
+ #include "G4Polyhedron.hh"
+@@ -54,7 +72,7 @@ using namespace CLHEP;
+ 
+ //////////////////////////////////////////////////////////////////////////
+ //
+-// Constructor - check and set half-widths as well as angles:
++// Constructor - check and set half-widths as well as angles: 
+ // final check of coplanarity
+ 
+ G4Trap::G4Trap( const G4String& pName,
+@@ -79,8 +97,8 @@ G4Trap::G4Trap( const G4String& pName,
+ 
+ //////////////////////////////////////////////////////////////////////////
+ //
+-// Constructor - Design of trapezoid based on 8 G4ThreeVector parameters,
+-// which are its vertices. Checking of planarity with preparation of
++// Constructor - Design of trapezoid based on 8 G4ThreeVector parameters, 
++// which are its vertices. Checking of planarity with preparation of 
+ // fPlanes[] and than calculation of other members
+ 
+ G4Trap::G4Trap( const G4String& pName,
+@@ -116,11 +134,11 @@ G4Trap::G4Trap( const G4String& pName,
+     G4Exception("G4Trap::G4Trap()", "GeomSolids0002",
+                 FatalException, message);
+   }
+-
++    
+   // Set parameters
+   //
+   fDz = (pt[7]).z();
+-
++      
+   fDy1     = ((pt[2]).y()-(pt[1]).y())*0.5;
+   fDx1     = ((pt[1]).x()-(pt[0]).x())*0.5;
+   fDx2     = ((pt[3]).x()-(pt[2]).x())*0.5;
+@@ -244,7 +262,6 @@ G4Trap::G4Trap(const G4Trap& rhs)
+     fDy2(rhs.fDy2), fDx3(rhs.fDx3), fDx4(rhs.fDx4), fTalpha2(rhs.fTalpha2)
+ {
+   for (G4int i=0; i<4; ++i) { fPlanes[i] = rhs.fPlanes[i]; }
+-  for (G4int i=0; i<6; ++i) { fAreas[i] = rhs.fAreas[i]; }
+   fTrapType = rhs.fTrapType;
+ }
+ 
+@@ -252,7 +269,7 @@ G4Trap::G4Trap(const G4Trap& rhs)
+ //
+ // Assignment operator
+ 
+-G4Trap& G4Trap::operator = (const G4Trap& rhs)
++G4Trap& G4Trap::operator = (const G4Trap& rhs) 
+ {
+   // Check assignment to self
+   //
+@@ -269,7 +286,6 @@ G4Trap& G4Trap::operator = (const G4Trap& rhs)
+   fDy1 = rhs.fDy1; fDx1 = rhs.fDx1; fDx2 = rhs.fDx2; fTalpha1 = rhs.fTalpha1;
+   fDy2 = rhs.fDy2; fDx3 = rhs.fDx3; fDx4 = rhs.fDx4; fTalpha2 = rhs.fTalpha2;
+   for (G4int i=0; i<4; ++i) { fPlanes[i] = rhs.fPlanes[i]; }
+-  for (G4int i=0; i<6; ++i) { fAreas[i] = rhs.fAreas[i]; }
+   fTrapType = rhs.fTrapType;
+   return *this;
+ }
+@@ -360,8 +376,8 @@ void G4Trap::MakePlanes()
+ 
+ void G4Trap::MakePlanes(const G4ThreeVector pt[8])
+ {
+-  constexpr G4int iface[4][4] = { {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} };
+-  const static G4String side[4] = { "~-Y", "~+Y", "~-X", "~+X" };
++  G4int iface[4][4] = { {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3} };
++  G4String side[4] = { "~-Y", "~+Y", "~-X", "~+X" };
+ 
+   for (G4int i=0; i<4; ++i)
+   {
+@@ -387,11 +403,37 @@ void G4Trap::MakePlanes(const G4ThreeVector pt[8])
+                 FatalException, message);
+   }
+ 
+-  // Re-compute parameters
+-  SetCachedValues();
++  // Define type of trapezoid
++  fTrapType = 0;
++  if (fPlanes[0].b  == -1 && fPlanes[1].b == 1 &&
++      std::abs(fPlanes[0].a) < DBL_EPSILON &&
++      std::abs(fPlanes[0].c) < DBL_EPSILON &&
++      std::abs(fPlanes[1].a) < DBL_EPSILON &&
++      std::abs(fPlanes[1].c) < DBL_EPSILON)
++  {
++    fTrapType = 1; // YZ section is a rectangle ...
++    if (std::abs(fPlanes[2].a + fPlanes[3].a) < DBL_EPSILON &&
++        std::abs(fPlanes[2].c - fPlanes[3].c) < DBL_EPSILON &&
++        fPlanes[2].b == 0 &&
++        fPlanes[3].b == 0)
++    {
++      fTrapType = 2; // ... and XZ section is a isosceles trapezoid
++      fPlanes[2].a = -fPlanes[3].a;
++      fPlanes[2].c =  fPlanes[3].c;
++    }
++    if (std::abs(fPlanes[2].a + fPlanes[3].a) < DBL_EPSILON &&
++        std::abs(fPlanes[2].b - fPlanes[3].b) < DBL_EPSILON &&
++        fPlanes[2].c == 0 &&
++        fPlanes[3].c == 0)
++    {
++      fTrapType = 3; // ... and XY section is a isosceles trapezoid
++      fPlanes[2].a = -fPlanes[3].a;
++      fPlanes[2].b =  fPlanes[3].b;
++    }
++  }
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Calculate the coef's of the plane p1->p2->p3->p4->p1
+ // where the ThreeVectors 1-4 are in anti-clockwise order when viewed
+@@ -406,9 +448,9 @@ G4bool G4Trap::MakePlane( const G4ThreeVector& p1,
+                                 TrapSidePlane& plane )
+ {
+   G4ThreeVector normal = ((p4 - p2).cross(p3 - p1)).unit();
+-  if (std::abs(normal.x()) < DBL_EPSILON) normal.setX(0);
+-  if (std::abs(normal.y()) < DBL_EPSILON) normal.setY(0);
+-  if (std::abs(normal.z()) < DBL_EPSILON) normal.setZ(0);
++  if (std::abs(normal.x()) < DBL_EPSILON) normal.setX(0); 
++  if (std::abs(normal.y()) < DBL_EPSILON) normal.setY(0); 
++  if (std::abs(normal.z()) < DBL_EPSILON) normal.setZ(0); 
+   normal = normal.unit();
+ 
+   G4ThreeVector centre = (p1 + p2 + p3 + p4)*0.25;
+@@ -423,65 +465,11 @@ G4bool G4Trap::MakePlane( const G4ThreeVector& p1,
+   G4double d3 = std::abs(normal.dot(p3) + plane.d);
+   G4double d4 = std::abs(normal.dot(p4) + plane.d);
+   G4double dmax = std::max(std::max(std::max(d1,d2),d3),d4);
+-
+-  return (dmax > 1000 * kCarTolerance) ? false : true;
+-}
+-
+-//////////////////////////////////////////////////////////////////////////
+-//
+-// Recompute parameters using planes
+-
+-void G4Trap::SetCachedValues()
+-{
+-  // Set indeces
+-  constexpr  G4int iface[6][4] =
+-      { {0,1,3,2}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3}, {4,6,7,5} };
+-
+-  // Get vertices
+-  G4ThreeVector pt[8];
+-  GetVertices(pt);
+-
+-  // Set face areas
+-  for (G4int i=0; i<6; ++i)
+-  {
+-    fAreas[i] = G4GeomTools::QuadAreaNormal(pt[iface[i][0]],
+-                                            pt[iface[i][1]],
+-                                            pt[iface[i][2]],
+-                                            pt[iface[i][3]]).mag();
+-  }
+-  for (G4int i=1; i<6; ++i) { fAreas[i] += fAreas[i - 1]; }
+-
+-  // Define type of trapezoid
+-  fTrapType = 0;
+-  if (fPlanes[0].b  == -1 && fPlanes[1].b == 1 &&
+-      std::abs(fPlanes[0].a) < DBL_EPSILON &&
+-      std::abs(fPlanes[0].c) < DBL_EPSILON &&
+-      std::abs(fPlanes[1].a) < DBL_EPSILON &&
+-      std::abs(fPlanes[1].c) < DBL_EPSILON)
+-  {
+-    fTrapType = 1; // YZ section is a rectangle ...
+-    if (std::abs(fPlanes[2].a + fPlanes[3].a) < DBL_EPSILON &&
+-        std::abs(fPlanes[2].c - fPlanes[3].c) < DBL_EPSILON &&
+-        fPlanes[2].b == 0 &&
+-        fPlanes[3].b == 0)
+-    {
+-      fTrapType = 2; // ... and XZ section is a isosceles trapezoid
+-      fPlanes[2].a = -fPlanes[3].a;
+-      fPlanes[2].c =  fPlanes[3].c;
+-    }
+-    if (std::abs(fPlanes[2].a + fPlanes[3].a) < DBL_EPSILON &&
+-        std::abs(fPlanes[2].b - fPlanes[3].b) < DBL_EPSILON &&
+-        fPlanes[2].c == 0 &&
+-        fPlanes[3].c == 0)
+-    {
+-      fTrapType = 3; // ... and XY section is a isosceles trapezoid
+-      fPlanes[2].a = -fPlanes[3].a;
+-      fPlanes[2].b =  fPlanes[3].b;
+-    }
+-  }
++  
++  return (dmax > 10000000 * kCarTolerance) ? false : true;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Get volume
+ 
+@@ -491,7 +479,7 @@ G4double G4Trap::GetCubicVolume()
+   {
+     G4ThreeVector pt[8];
+     GetVertices(pt);
+-
++ 
+     G4double dz  = pt[4].z() - pt[0].z();
+     G4double dy1 = pt[2].y() - pt[0].y();
+     G4double dx1 = pt[1].x() - pt[0].x();
+@@ -506,7 +494,7 @@ G4double G4Trap::GetCubicVolume()
+   return fCubicVolume;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Get surface area
+ 
+@@ -530,7 +518,7 @@ G4double G4Trap::GetSurfaceArea()
+   return fSurfaceArea;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Dispatch to parameterisation for replication mechanism dimension
+ // computation & modification.
+@@ -542,7 +530,7 @@ void G4Trap::ComputeDimensions(       G4VPVParameterisation* p,
+   p->ComputeDimensions(*this,n,pRep);
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Get bounding box
+ 
+@@ -582,7 +570,7 @@ void G4Trap::BoundingLimits(G4ThreeVector& pMin, G4ThreeVector& pMax) const
+   }
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Calculate extent under transform and specified limit
+ 
+@@ -599,7 +587,7 @@ G4bool G4Trap::CalculateExtent( const EAxis pAxis,
+   BoundingLimits(bmin,bmax);
+   G4BoundingEnvelope bbox(bmin,bmax);
+ #ifdef G4BBOX_EXTENT
+-  return bbox.CalculateExtent(pAxis,pVoxelLimit,pTransform,pMin,pMax);
++  if (true) return bbox.CalculateExtent(pAxis,pVoxelLimit,pTransform,pMin,pMax);
+ #endif
+   if (bbox.BoundingBoxVsVoxelLimits(pAxis,pVoxelLimit,pTransform,pMin,pMax))
+   {
+@@ -631,17 +619,19 @@ G4bool G4Trap::CalculateExtent( const EAxis pAxis,
+   return exist;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Return whether point is inside/outside/on_surface
+ 
+ EInside G4Trap::Inside( const G4ThreeVector& p ) const
+ {
++  G4double dz = std::abs(p.z())-fDz;
++  if (dz > halfCarTolerance) return kOutside;
++
+   switch (fTrapType)
+   {
+     case 0: // General case
+     {
+-      G4double dz = std::abs(p.z())-fDz;
+       G4double dy1 = fPlanes[0].b*p.y()+fPlanes[0].c*p.z()+fPlanes[0].d;
+       G4double dy2 = fPlanes[1].b*p.y()+fPlanes[1].c*p.z()+fPlanes[1].d;
+       G4double dy = std::max(dz,std::max(dy1,dy2));
+@@ -652,12 +642,11 @@ EInside G4Trap::Inside( const G4ThreeVector& p ) const
+                    + fPlanes[3].c*p.z()+fPlanes[3].d;
+       G4double dist = std::max(dy,std::max(dx1,dx2));
+ 
+-      return (dist > halfCarTolerance) ? kOutside :
+-        ((dist > -halfCarTolerance) ? kSurface : kInside);
++      if (dist > halfCarTolerance) return kOutside;
++      return (dist > -halfCarTolerance) ? kSurface : kInside;
+     }
+     case 1: // YZ section is a rectangle
+     {
+-      G4double dz = std::abs(p.z())-fDz;
+       G4double dy = std::max(dz,std::abs(p.y())+fPlanes[1].d);
+       G4double dx1 = fPlanes[2].a*p.x()+fPlanes[2].b*p.y()
+                    + fPlanes[2].c*p.z()+fPlanes[2].d;
+@@ -665,44 +654,47 @@ EInside G4Trap::Inside( const G4ThreeVector& p ) const
+                    + fPlanes[3].c*p.z()+fPlanes[3].d;
+       G4double dist = std::max(dy,std::max(dx1,dx2));
+ 
+-      return (dist > halfCarTolerance) ? kOutside :
+-        ((dist > -halfCarTolerance) ? kSurface : kInside);
++      if (dist > halfCarTolerance) return kOutside;
++      return (dist > -halfCarTolerance) ? kSurface : kInside;
+     }
+     case 2: // YZ section is a rectangle and
+     {       // XZ section is an isosceles trapezoid
+-      G4double dz = std::abs(p.z())-fDz;
+       G4double dy = std::max(dz,std::abs(p.y())+fPlanes[1].d);
+       G4double dx = fPlanes[3].a*std::abs(p.x())
+                   + fPlanes[3].c*p.z()+fPlanes[3].d;
+       G4double dist = std::max(dy,dx);
+ 
+-      return (dist > halfCarTolerance) ? kOutside :
+-        ((dist > -halfCarTolerance) ? kSurface : kInside);
++      if (dist > halfCarTolerance) return kOutside;
++      return (dist > -halfCarTolerance) ? kSurface : kInside;
+     }
+     case 3: // YZ section is a rectangle and
+     {       // XY section is an isosceles trapezoid
+-      G4double dz = std::abs(p.z())-fDz;
+       G4double dy = std::max(dz,std::abs(p.y())+fPlanes[1].d);
+       G4double dx = fPlanes[3].a*std::abs(p.x())
+                   + fPlanes[3].b*p.y()+fPlanes[3].d;
+       G4double dist = std::max(dy,dx);
+ 
+-      return (dist > halfCarTolerance) ? kOutside :
+-        ((dist > -halfCarTolerance) ? kSurface : kInside);
++      if (dist > halfCarTolerance) return kOutside;
++      return (dist > -halfCarTolerance) ? kSurface : kInside;
+     }
+   }
+-  return kOutside;
++  return kOutside; 
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Determine side, and return corresponding normal
+ 
+ G4ThreeVector G4Trap::SurfaceNormal( const G4ThreeVector& p ) const
+ {
++  G4int nsurf = 0; // number of surfaces where p is placed
+   G4double nx = 0, ny = 0, nz = 0;
+   G4double dz = std::abs(p.z()) - fDz;
+-  nz = std::copysign(G4double(std::abs(dz) <= halfCarTolerance), p.z());
++  if (std::abs(dz) <= halfCarTolerance)
++  {
++    nz = (p.z() < 0) ? -1 : 1;
++    ++nsurf;
++  }
+ 
+   switch (fTrapType)
+   {
+@@ -714,6 +706,7 @@ G4ThreeVector G4Trap::SurfaceNormal( const G4ThreeVector& p ) const
+         if (std::abs(dy) > halfCarTolerance) continue;
+         ny  = fPlanes[i].b;
+         nz += fPlanes[i].c;
++        ++nsurf;
+         break;
+       }
+       for (G4int i=2; i<4; ++i)
+@@ -724,14 +717,15 @@ G4ThreeVector G4Trap::SurfaceNormal( const G4ThreeVector& p ) const
+         nx  = fPlanes[i].a;
+         ny += fPlanes[i].b;
+         nz += fPlanes[i].c;
++        ++nsurf;
+         break;
+       }
+       break;
+     }
+-    case 1: // YZ section - rectangle
++    case 1: // YZ section is a rectangle
+     {
+       G4double dy = std::abs(p.y()) + fPlanes[1].d;
+-      ny = std::copysign(G4double(std::abs(dy) <= halfCarTolerance), p.y());
++      if (std::abs(dy) <= halfCarTolerance) ny = (p.y() < 0) ? -1 : 1;
+       for (G4int i=2; i<4; ++i)
+       {
+         G4double dx = fPlanes[i].a*p.x() +
+@@ -740,39 +734,45 @@ G4ThreeVector G4Trap::SurfaceNormal( const G4ThreeVector& p ) const
+         nx  = fPlanes[i].a;
+         ny += fPlanes[i].b;
+         nz += fPlanes[i].c;
++        ++nsurf;
+         break;
+       }
+       break;
+     }
+-    case 2: // YZ section - rectangle, XZ section - isosceles trapezoid
+-    {
++    case 2: // YZ section is a rectangle and
++    {       // XZ section is an isosceles trapezoid
+       G4double dy = std::abs(p.y()) + fPlanes[1].d;
+-      ny = std::copysign(G4double(std::abs(dy) <= halfCarTolerance), p.y());
++      if (std::abs(dy) <= halfCarTolerance) ny = (p.y() < 0) ? -1 : 1;
+       G4double dx = fPlanes[3].a*std::abs(p.x()) +
+                     fPlanes[3].c*p.z() + fPlanes[3].d;
+-      G4double k = std::abs(dx) <= halfCarTolerance;
+-      nx  = std::copysign(k, p.x())*fPlanes[3].a;
+-      nz += k*fPlanes[3].c;
++      if (std::abs(dx) <= halfCarTolerance)
++      {
++        nx  = (p.x() < 0) ? -fPlanes[3].a : fPlanes[3].a;
++        nz += fPlanes[3].c;
++        ++nsurf;
++      }
+       break;
+     }
+-    case 3: // YZ section - rectangle, XY section - isosceles trapezoid
+-    {
++    case 3: // YZ section is a rectangle and
++    {       // XY section is an isosceles trapezoid
+       G4double dy = std::abs(p.y()) + fPlanes[1].d;
+-      ny = std::copysign(G4double(std::abs(dy) <= halfCarTolerance), p.y());
++      if (std::abs(dy) <= halfCarTolerance) ny = (p.y() < 0) ? -1 : 1;
+       G4double dx = fPlanes[3].a*std::abs(p.x()) +
+                     fPlanes[3].b*p.y() + fPlanes[3].d;
+-      G4double k = std::abs(dx) <= halfCarTolerance;
+-      nx  = std::copysign(k, p.x())*fPlanes[3].a;
+-      ny += k*fPlanes[3].b;
++      if (std::abs(dx) <= halfCarTolerance)
++      {
++        nx  = (p.x() < 0) ? -fPlanes[3].a : fPlanes[3].a;
++        ny += fPlanes[3].b;
++        ++nsurf;
++      }
+       break;
+     }
+   }
+ 
+   // Return normal
+   //
+-  G4double mag2 = nx*nx + ny*ny + nz*nz;
+-  if (mag2 == 1)      return G4ThreeVector(nx,ny,nz);
+-  else if (mag2 != 0) return G4ThreeVector(nx,ny,nz).unit(); // edge or corner
++  if (nsurf == 1)      return G4ThreeVector(nx,ny,nz);
++  else if (nsurf != 0) return G4ThreeVector(nx,ny,nz).unit(); // edge or corner
+   else
+   {
+     // Point is not on the surface
+@@ -795,7 +795,7 @@ G4ThreeVector G4Trap::SurfaceNormal( const G4ThreeVector& p ) const
+   }
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Algorithm for SurfaceNormal() following the original specification
+ // for points not on the surface
+@@ -819,7 +819,7 @@ G4ThreeVector G4Trap::ApproxSurfaceNormal( const G4ThreeVector& p ) const
+     return G4ThreeVector(0, 0, (p.z() < 0) ? -1 : 1);
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++///////////////////////////////////////////////////////////////////////
+ //
+ // Calculate distance to shape from outside
+ //  - return kInfinity if no intersection
+@@ -832,7 +832,7 @@ G4double G4Trap::DistanceToIn(const G4ThreeVector& p,
+   if ((std::abs(p.z()) - fDz) >= -halfCarTolerance && p.z()*v.z() >= 0)
+     return kInfinity;
+   G4double invz = (-v.z() == 0) ? DBL_MAX : -1./v.z();
+-  G4double dz = (invz < 0) ? fDz : -fDz;
++  G4double dz = (invz < 0) ? fDz : -fDz; 
+   G4double tzmin = (p.z() + dz)*invz;
+   G4double tzmax = (p.z() - dz)*invz;
+ 
+@@ -841,7 +841,7 @@ G4double G4Trap::DistanceToIn(const G4ThreeVector& p,
+   G4double tymin = 0, tymax = DBL_MAX;
+   G4int i = 0;
+   for ( ; i<2; ++i)
+-  {
++  { 
+     G4double cosa = fPlanes[i].b*v.y() + fPlanes[i].c*v.z();
+     G4double dist = fPlanes[i].b*p.y() + fPlanes[i].c*p.z() + fPlanes[i].d;
+     if (dist >= -halfCarTolerance)
+@@ -854,14 +854,14 @@ G4double G4Trap::DistanceToIn(const G4ThreeVector& p,
+     {
+       G4double tmp  = -dist/cosa;
+       if (tymax > tmp) tymax = tmp;
+-    }
++    } 
+   }
+ 
+   // Z intersections
+   //
+   G4double txmin = 0, txmax = DBL_MAX;
+   for ( ; i<4; ++i)
+-  {
++  { 
+     G4double cosa = fPlanes[i].a*v.x()+fPlanes[i].b*v.y()+fPlanes[i].c*v.z();
+     G4double dist = fPlanes[i].a*p.x()+fPlanes[i].b*p.y()+fPlanes[i].c*p.z() +
+                     fPlanes[i].d;
+@@ -875,19 +875,19 @@ G4double G4Trap::DistanceToIn(const G4ThreeVector& p,
+     {
+       G4double tmp  = -dist/cosa;
+       if (txmax > tmp) txmax = tmp;
+-    }
++    } 
+   }
+ 
+   // Find distance
+   //
+   G4double tmin = std::max(std::max(txmin,tymin),tzmin);
+   G4double tmax = std::min(std::min(txmax,tymax),tzmax);
+-
++     
+   if (tmax <= tmin + halfCarTolerance) return kInfinity; // touch or no hit
+   return (tmin < halfCarTolerance ) ? 0. : tmin;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++////////////////////////////////////////////////////////////////////////////
+ //
+ // Calculate exact shortest distance to any boundary from outside
+ // This is the best fast estimation of the shortest distance to trap
+@@ -944,7 +944,7 @@ G4double G4Trap::DistanceToIn( const G4ThreeVector& p ) const
+   return 0.;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++////////////////////////////////////////////////////////////////////////////
+ //
+ // Calculate distance to surface of shape from inside and
+ // find normal at exit point, if required
+@@ -952,7 +952,7 @@ G4double G4Trap::DistanceToIn( const G4ThreeVector& p ) const
+ 
+ G4double G4Trap::DistanceToOut(const G4ThreeVector& p, const G4ThreeVector& v,
+                                const G4bool calcNorm,
+-                                     G4bool* validNorm, G4ThreeVector* n) const
++                                     G4bool *validNorm, G4ThreeVector *n) const
+ {
+   // Z intersections
+   //
+@@ -1017,7 +1017,7 @@ G4double G4Trap::DistanceToOut(const G4ThreeVector& p, const G4ThreeVector& v,
+ 
+   // Set normal, if required, and return distance
+   //
+-  if (calcNorm)
++  if (calcNorm) 
+   {
+     *validNorm = true;
+     if (iside < 0)
+@@ -1028,7 +1028,7 @@ G4double G4Trap::DistanceToOut(const G4ThreeVector& p, const G4ThreeVector& v,
+   return tmax;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++////////////////////////////////////////////////////////////////////////////
+ //
+ // Calculate exact shortest distance to any boundary from inside
+ // - Returns 0 is ThreeVector outside
+@@ -1045,7 +1045,7 @@ G4double G4Trap::DistanceToOut( const G4ThreeVector& p ) const
+     message << "   p.x() = " << p.x()/mm << " mm\n";
+     message << "   p.y() = " << p.y()/mm << " mm\n";
+     message << "   p.z() = " << p.z()/mm << " mm";
+-    G4cout.precision(oldprc);
++    G4cout.precision(oldprc) ;
+     G4Exception("G4Trap::DistanceToOut(p)", "GeomSolids1002",
+                 JustWarning, message );
+     DumpInfo();
+@@ -1100,7 +1100,7 @@ G4double G4Trap::DistanceToOut( const G4ThreeVector& p ) const
+   return 0.;
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++////////////////////////////////////////////////////////////////////////////
+ //
+ // GetEntityType
+ 
+@@ -1129,6 +1129,7 @@ std::ostream& G4Trap::StreamInfo( std::ostream& os ) const
+                                        +fTthetaSphi*fTthetaSphi));
+   G4double alpha1 = std::atan(fTalpha1);
+   G4double alpha2 = std::atan(fTalpha2);
++  G4String signDegree = "\u00B0"; 
+ 
+   G4int oldprc = os.precision(16);
+   os << "-----------------------------------------------------------\n"
+@@ -1143,10 +1144,10 @@ std::ostream& G4Trap::StreamInfo( std::ostream& os ) const
+      << "    half length Y, face +Dz: " << fDy2/mm << " mm\n"
+      << "    half length X, face +Dz, side -Dy2: " << fDx3/mm << " mm\n"
+      << "    half length X, face +Dz, side +Dy2: " << fDx4/mm << " mm\n"
+-     << "    theta: " << theta/degree << "degrees\n"
+-     << "    phi: " << phi/degree << "degrees\n"
+-     << "    alpha, face -Dz: " << alpha1/degree << "degrees\n"
+-     << "    alpha, face +Dz: " << alpha2/degree << "degrees\n"
++     << "    theta: " << theta/degree << signDegree << "\n"
++     << "    phi: " << phi/degree << signDegree << "\n"
++     << "    alpha, face -Dz: " << alpha1/degree << signDegree << "\n"
++     << "    alpha, face +Dz: " << alpha2/degree << signDegree << "\n"
+      << "-----------------------------------------------------------\n";
+   os.precision(oldprc);
+ 
+@@ -1171,29 +1172,38 @@ void G4Trap::GetVertices(G4ThreeVector pt[8]) const
+   }
+ }
+ 
+-//////////////////////////////////////////////////////////////////////////
++/////////////////////////////////////////////////////////////////////////
+ //
+ // Generate random point on the surface
+ 
+ G4ThreeVector G4Trap::GetPointOnSurface() const
+ {
+-  // Set indeces
+-  constexpr G4int iface [6][4] =
+-    { {0,1,3,2}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3}, {4,6,7,5} };
+-
+-  // Set vertices
+   G4ThreeVector pt[8];
++  G4int iface [6][4] =
++    { {0,1,3,2}, {0,4,5,1}, {2,3,7,6}, {0,2,6,4}, {1,5,7,3}, {4,6,7,5} }; 
++  G4double sface[6];
++
+   GetVertices(pt);
++  G4double stotal = 0;
++  for (G4int i=0; i<6; ++i)
++  {
++    G4double ss = G4GeomTools::QuadAreaNormal(pt[iface[i][0]],
++                                              pt[iface[i][1]],
++                                              pt[iface[i][2]],
++                                              pt[iface[i][3]]).mag();
++    stotal  += ss;
++    sface[i] = stotal;
++  }
+ 
+   // Select face
+   //
+-  G4double select = fAreas[5]*G4QuickRand();
++  G4double select = stotal*G4UniformRand();
+   G4int k = 5;
+-  k -= (select <= fAreas[4]);
+-  k -= (select <= fAreas[3]);
+-  k -= (select <= fAreas[2]);
+-  k -= (select <= fAreas[1]);
+-  k -= (select <= fAreas[0]);
++  if (select <= sface[4]) k = 4;
++  if (select <= sface[3]) k = 3;
++  if (select <= sface[2]) k = 2;
++  if (select <= sface[1]) k = 1;
++  if (select <= sface[0]) k = 0;
+ 
+   // Select sub-triangle
+   //
+@@ -1201,13 +1211,14 @@ G4ThreeVector G4Trap::GetPointOnSurface() const
+   G4int i1 = iface[k][1];
+   G4int i2 = iface[k][2];
+   G4int i3 = iface[k][3];
++  G4double s1 = G4GeomTools::TriangleAreaNormal(pt[i0],pt[i1],pt[i3]).mag();
+   G4double s2 = G4GeomTools::TriangleAreaNormal(pt[i2],pt[i1],pt[i3]).mag();
+-  if (select > fAreas[k] - s2) i0 = i2;
++  if ((s1+s2)*G4UniformRand() > s1) i0 = i2;
+ 
+   // Generate point
+   //
+-  G4double u = G4QuickRand();
+-  G4double v = G4QuickRand();
++  G4double u = G4UniformRand();
++  G4double v = G4UniformRand();
+   if (u + v > 1.) { u = 1. - u; v = 1. - v; }
+   return (1.-u-v)*pt[i0] + u*pt[i1] + v*pt[i3];
+ }
+diff --git a/source/geometry/solids/specific/include/G4TwistedTubs.hh b/source/geometry/solids/specific/include/G4TwistedTubs.hh
+index 7787321cb0..82cc1f2953 100644
+--- a/source/geometry/solids/specific/include/G4TwistedTubs.hh
++++ b/source/geometry/solids/specific/include/G4TwistedTubs.hh
+@@ -23,6 +23,14 @@
+ // * acceptance of all terms of the Geant4 Software license.          *
+ // ********************************************************************
+ //
++//
++// $Id: G4TwistedTubs.hh 83572 2014-09-01 15:23:27Z gcosmo $
++//
++// 
++// --------------------------------------------------------------------
++// GEANT 4 class header file
++//
++//
+ // G4TwistedTubs
+ //
+ // Class description:
+@@ -36,12 +44,15 @@
+ //  but cannot has different stereo angles between the inner surface
+ //  and outer surface.
+ 
+-// 01-Aug-2002 - Kotoyo Hoshina (hoshina@hepburn.s.chiba-u.ac.jp), created.
+-// 13-Nov-2003 - O.Link (Oliver.Link@cern.ch), Integration in Geant4
+-//               from original version in Jupiter-2.5.02 application.
++// Author: 
++//   01-Aug-2002 - Kotoyo Hoshina (hoshina@hepburn.s.chiba-u.ac.jp)
++//
++// History:
++//   13-Nov-2003 - O.Link (Oliver.Link@cern.ch), Integration in Geant4
++//                 from original version in Jupiter-2.5.02 application.
+ // --------------------------------------------------------------------
+-#ifndef G4TWISTEDTUBS_HH
+-#define G4TWISTEDTUBS_HH
++#ifndef __G4TWISTEDTUBS__
++#define __G4TWISTEDTUBS__
+ 
+ #include "G4VSolid.hh"
+ #include "G4TwistTubsFlatSide.hh"
+@@ -55,14 +66,14 @@ class G4TwistedTubs : public G4VSolid
+ {
+  public:  // with description
+  
+-  G4TwistedTubs(const G4String& pname,         // Name of instance
++  G4TwistedTubs(const G4String &pname,         // Name of instance
+                       G4double  twistedangle,  // Twisted angle
+                       G4double  endinnerrad,   // Inner radius at endcap 
+                       G4double  endouterrad,   // Outer radius at endcap 
+                       G4double  halfzlen,      // half z length 
+                       G4double  dphi);         // Phi angle of a segment
+                       
+-  G4TwistedTubs(const G4String& pname,         // Name of instance
++  G4TwistedTubs(const G4String &pname,         // Name of instance
+                       G4double  twistedangle,  // Stereo angle
+                       G4double  endinnerrad,   // Inner radius at endcap 
+                       G4double  endouterrad,   // Outer radius at endcap 
+@@ -70,7 +81,7 @@ class G4TwistedTubs : public G4VSolid
+                       G4int     nseg,          // Number of segments in totalPhi
+                       G4double  totphi);       // Total angle of all segments
+                       
+-  G4TwistedTubs(const G4String& pname,         // Name of instance
++  G4TwistedTubs(const G4String &pname,         // Name of instance
+                       G4double  twistedangle,  // Twisted angle
+                       G4double  innerrad,      // Inner radius at z=0 
+                       G4double  outerrad,      // Outer radius at z=0 
+@@ -78,7 +89,7 @@ class G4TwistedTubs : public G4VSolid
+                       G4double  positiveEndz,  // +ve z endplate
+                       G4double  dphi);         // Phi angle of a segment
+ 
+-  G4TwistedTubs(const G4String& pname,         // Name of instance
++  G4TwistedTubs(const G4String &pname,         // Name of instance
+                       G4double  twistedangle,  // Stereo angle
+                       G4double  innerrad,      // Inner radius at z=0 
+                       G4double  outerrad,      // Outer radius at z=0 
+@@ -89,38 +100,36 @@ class G4TwistedTubs : public G4VSolid
+ 
+   virtual ~G4TwistedTubs();
+              
+-  void ComputeDimensions(G4VPVParameterisation*    /* p  */ ,
+-                         const G4int               /* n  */ ,
+-                         const G4VPhysicalVolume*  /* prep */ );
+-
+-  void BoundingLimits(G4ThreeVector& pMin, G4ThreeVector& pMax) const; 
+-
+-  G4bool CalculateExtent(const EAxis               pAxis,
+-                         const G4VoxelLimits&     pVoxelLimit,
+-                         const G4AffineTransform& pTransform,
+-                               G4double&          pMin,
+-                               G4double&          pMax ) const;
++  void ComputeDimensions(G4VPVParameterisation   *  /* p  */ ,
++                         const G4int                /* n  */ ,
++                         const G4VPhysicalVolume *  /* prep */ );
++ 
++  G4bool CalculateExtent(const EAxis               paxis,
++                         const G4VoxelLimits      &pvoxellimit,
++                         const G4AffineTransform  &ptransform,
++                               G4double           &pmin,
++                               G4double           &pmax ) const;
+ 
+-  G4double DistanceToIn (const G4ThreeVector& p,
+-                         const G4ThreeVector& v ) const;
++  G4double DistanceToIn (const G4ThreeVector &p,
++                         const G4ThreeVector &v ) const;
+ 
+-  G4double DistanceToIn (const G4ThreeVector& p ) const;
++  G4double DistanceToIn (const G4ThreeVector &p ) const;
+    
+-  G4double DistanceToOut(const G4ThreeVector& p, 
+-                         const G4ThreeVector& v,
+-                         const G4bool calcnorm = false,
+-                               G4bool* validnorm = nullptr, 
+-                               G4ThreeVector* n = nullptr ) const;
++  G4double DistanceToOut(const G4ThreeVector &p, 
++                         const G4ThreeVector &v,
++                         const G4bool         calcnorm=G4bool(false),
++                               G4bool        *validnorm=0, 
++                               G4ThreeVector *n=0 ) const;
+ 
+-  G4double DistanceToOut(const G4ThreeVector& p) const;
++  G4double DistanceToOut(const G4ThreeVector &p) const;
+   
+-  EInside Inside (const G4ThreeVector& p) const;
++  EInside Inside (const G4ThreeVector &p) const;
+ 
+-  G4ThreeVector SurfaceNormal(const G4ThreeVector& p) const;
++  G4ThreeVector SurfaceNormal(const G4ThreeVector &p) const;
+ 
+-  void          DescribeYourselfTo (G4VGraphicsScene& scene) const;
+-  G4Polyhedron* CreatePolyhedron   () const;
+-  G4Polyhedron* GetPolyhedron      () const;
++  void            DescribeYourselfTo (G4VGraphicsScene &scene) const;
++  G4Polyhedron   *CreatePolyhedron   () const;
++  G4Polyhedron   *GetPolyhedron      () const;
+ 
+   std::ostream &StreamInfo(std::ostream& os) const;
+ 
+@@ -178,7 +187,7 @@ class G4TwistedTubs : public G4VSolid
+     // Copy constructor and assignment operator.
+ 
+ #ifdef G4TWISTDEBUG
+-  G4VTwistSurface* GetOuterHype() const { return fOuterHype; }
++  G4VTwistSurface * GetOuterHype() const { return fOuterHype; }
+ #endif
+   
+  private:
+@@ -187,8 +196,15 @@ class G4TwistedTubs : public G4VSolid
+                          G4double outerrad,
+                          G4double negativeEndz, G4double positiveEndz);
+                      
+-  void CreateSurfaces();
+-
++  void         CreateSurfaces();
++
++  static void  AddPolyToExtent( const G4ThreeVector     &v0,
++                                const G4ThreeVector     &v1,
++                                const G4ThreeVector     &w1,
++                                const G4ThreeVector     &w0,
++                                const G4VoxelLimits     &voxellimit,
++                                const EAxis              axis,
++                                      G4SolidExtentList &extentlist );
+  private:
+  
+   G4double fPhiTwist;       // Twist angle from -fZHalfLength to fZHalfLength
+@@ -213,18 +229,18 @@ class G4TwistedTubs : public G4VSolid
+   G4double fTanOuterStereo2;   // fInnerRadius * fInnerRadius
+   G4double fEndZ2[2];          // fEndZ * fEndZ
+   
+-  G4VTwistSurface* fLowerEndcap;    // Surface of -ve z
+-  G4VTwistSurface* fUpperEndcap;    // Surface of +ve z
+-  G4VTwistSurface* fLatterTwisted;  // Surface of -ve phi
+-  G4VTwistSurface* fFormerTwisted;  // Surface of +ve phi
+-  G4VTwistSurface* fInnerHype;      // Surface of -ve r
+-  G4VTwistSurface* fOuterHype;      // Surface of +ve r
++  G4VTwistSurface *fLowerEndcap;    // Surface of -ve z
++  G4VTwistSurface *fUpperEndcap;    // Surface of +ve z
++  G4VTwistSurface *fLatterTwisted;  // Surface of -ve phi
++  G4VTwistSurface *fFormerTwisted;  // Surface of +ve phi
++  G4VTwistSurface *fInnerHype;      // Surface of -ve r
++  G4VTwistSurface *fOuterHype;      // Surface of +ve r
+ 
+-  G4double fCubicVolume = 0.0;      // Cached value for cubic volume
+-  G4double fSurfaceArea = 0.0;      // Cached value for surface area
++  G4double fCubicVolume;       // Cached value for cubic volume
++  G4double fSurfaceArea;       // Cached value for surface area
+ 
+-  mutable G4bool fRebuildPolyhedron = false;
+-  mutable G4Polyhedron* fpPolyhedron = nullptr; // polyhedron for vis
++  mutable G4bool fRebuildPolyhedron;
++  mutable G4Polyhedron* fpPolyhedron;  // pointer to polyhedron for vis
+ 
+   class LastState              // last Inside result
+   {
+@@ -355,12 +371,9 @@ void G4TwistedTubs::SetFields(G4double phitwist, G4double innerrad,
+    fInnerRadius2 = fInnerRadius * fInnerRadius;
+    fOuterRadius2 = fOuterRadius * fOuterRadius;
+    
+-   if (std::fabs(fEndZ[0]) >= std::fabs(fEndZ[1]))
+-   {
++   if (std::fabs(fEndZ[0]) >= std::fabs(fEndZ[1])) {
+       fZHalfLength = std::fabs(fEndZ[0]);
+-   }
+-   else
+-   {
++   } else {
+       fZHalfLength = std::fabs(fEndZ[1]);
+    }
+ 
+diff --git a/source/geometry/solids/specific/src/G4TwistedTubs.cc b/source/geometry/solids/specific/src/G4TwistedTubs.cc
+index e2aa388b0b..5d87e62f70 100644
+--- a/source/geometry/solids/specific/src/G4TwistedTubs.cc
++++ b/source/geometry/solids/specific/src/G4TwistedTubs.cc
+@@ -23,11 +23,22 @@
+ // * acceptance of all terms of the Geant4 Software license.          *
+ // ********************************************************************
+ //
+-// G4TwistedTubs implementation
+ //
+-// 01-Aug-2002 - Kotoyo Hoshina (hoshina@hepburn.s.chiba-u.ac.jp), created.
+-// 13-Nov-2003 - O.Link (Oliver.Link@cern.ch), Integration in Geant4
+-//               from original version in Jupiter-2.5.02 application.
++// $Id: G4TwistedTubs.cc 83572 2014-09-01 15:23:27Z gcosmo $
++//
++// 
++// --------------------------------------------------------------------
++// GEANT 4 class source file
++//
++//
++// G4TwistTubsSide.cc
++//
++// Author: 
++//   01-Aug-2002 - Kotoyo Hoshina (hoshina@hepburn.s.chiba-u.ac.jp)
++//
++// History:
++//   13-Nov-2003 - O.Link (Oliver.Link@cern.ch), Integration in Geant4
++//                 from original version in Jupiter-2.5.02 application.
+ // --------------------------------------------------------------------
+ 
+ #include "G4TwistedTubs.hh"
+@@ -37,7 +48,7 @@
+ #include "G4GeometryTolerance.hh"
+ #include "G4VoxelLimits.hh"
+ #include "G4AffineTransform.hh"
+-#include "G4BoundingEnvelope.hh"
++#include "G4SolidExtentList.hh"
+ #include "G4ClippablePolygon.hh"
+ #include "G4VPVParameterisation.hh"
+ #include "meshdefs.hh"
+@@ -58,7 +69,7 @@ namespace
+ //=====================================================================
+ //* constructors ------------------------------------------------------
+ 
+-G4TwistedTubs::G4TwistedTubs(const G4String& pname,
++G4TwistedTubs::G4TwistedTubs(const G4String &pname,
+                                    G4double  twistedangle,
+                                    G4double  endinnerrad,
+                                    G4double  endouterrad,
+@@ -66,7 +77,9 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+                                    G4double  dphi)
+    : G4VSolid(pname), fDPhi(dphi), 
+      fLowerEndcap(0), fUpperEndcap(0), fLatterTwisted(0),
+-     fFormerTwisted(0), fInnerHype(0), fOuterHype(0)
++     fFormerTwisted(0), fInnerHype(0), fOuterHype(0),
++     fCubicVolume(0.), fSurfaceArea(0.),
++     fRebuildPolyhedron(false), fpPolyhedron(0)
+ {
+    if (endinnerrad < DBL_MIN)
+    {
+@@ -89,7 +102,7 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+    CreateSurfaces();
+ }
+ 
+-G4TwistedTubs::G4TwistedTubs(const G4String& pname,     
++G4TwistedTubs::G4TwistedTubs(const G4String &pname,     
+                                    G4double  twistedangle,    
+                                    G4double  endinnerrad,  
+                                    G4double  endouterrad,  
+@@ -98,7 +111,9 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+                                    G4double  totphi)
+    : G4VSolid(pname),
+      fLowerEndcap(0), fUpperEndcap(0), fLatterTwisted(0),
+-     fFormerTwisted(0), fInnerHype(0), fOuterHype(0)
++     fFormerTwisted(0), fInnerHype(0), fOuterHype(0),
++     fCubicVolume(0.), fSurfaceArea(0.),
++     fRebuildPolyhedron(false), fpPolyhedron(0)
+ {
+ 
+    if (!nseg)
+@@ -131,7 +146,7 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+    CreateSurfaces();
+ }
+ 
+-G4TwistedTubs::G4TwistedTubs(const G4String& pname,
++G4TwistedTubs::G4TwistedTubs(const G4String &pname,
+                                    G4double  twistedangle,
+                                    G4double  innerrad,
+                                    G4double  outerrad,
+@@ -140,7 +155,9 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+                                    G4double  dphi)
+    : G4VSolid(pname), fDPhi(dphi),
+      fLowerEndcap(0), fUpperEndcap(0), fLatterTwisted(0),
+-     fFormerTwisted(0), fInnerHype(0), fOuterHype(0)
++     fFormerTwisted(0), fInnerHype(0), fOuterHype(0),
++     fCubicVolume(0.), fSurfaceArea(0.),
++     fRebuildPolyhedron(false), fpPolyhedron(0)
+ {
+    if (innerrad < DBL_MIN)
+    {
+@@ -152,7 +169,7 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+    CreateSurfaces();
+ }
+ 
+-G4TwistedTubs::G4TwistedTubs(const G4String& pname,     
++G4TwistedTubs::G4TwistedTubs(const G4String &pname,     
+                                    G4double  twistedangle,    
+                                    G4double  innerrad,  
+                                    G4double  outerrad,  
+@@ -162,7 +179,9 @@ G4TwistedTubs::G4TwistedTubs(const G4String& pname,
+                                    G4double  totphi)
+    : G4VSolid(pname),
+      fLowerEndcap(0), fUpperEndcap(0), fLatterTwisted(0),
+-     fFormerTwisted(0), fInnerHype(0), fOuterHype(0)
++     fFormerTwisted(0), fInnerHype(0), fOuterHype(0),
++     fCubicVolume(0.), fSurfaceArea(0.),
++     fRebuildPolyhedron(false), fpPolyhedron(0)
+ {
+    if (!nseg)
+    {
+@@ -191,7 +210,9 @@ G4TwistedTubs::G4TwistedTubs( __void__& a )
+     fZHalfLength(0.), fInnerStereo(0.), fOuterStereo(0.), fTanInnerStereo(0.),
+     fTanOuterStereo(0.), fKappa(0.), fInnerRadius2(0.), fOuterRadius2(0.),
+     fTanInnerStereo2(0.), fTanOuterStereo2(0.), fLowerEndcap(0), fUpperEndcap(0),
+-    fLatterTwisted(0), fFormerTwisted(0), fInnerHype(0), fOuterHype(0)
++    fLatterTwisted(0), fFormerTwisted(0), fInnerHype(0), fOuterHype(0),
++    fCubicVolume(0.), fSurfaceArea(0.),
++    fRebuildPolyhedron(false), fpPolyhedron(0)
+ {
+ }
+ 
+@@ -206,7 +227,7 @@ G4TwistedTubs::~G4TwistedTubs()
+    if (fFormerTwisted) { delete fFormerTwisted; }
+    if (fInnerHype)     { delete fInnerHype;     }
+    if (fOuterHype)     { delete fOuterHype;     }
+-   if (fpPolyhedron)   { delete fpPolyhedron; fpPolyhedron = nullptr; }
++   if (fpPolyhedron)   { delete fpPolyhedron; fpPolyhedron = 0; }
+ }
+ 
+ //=====================================================================
+@@ -224,13 +245,14 @@ G4TwistedTubs::G4TwistedTubs(const G4TwistedTubs& rhs)
+     fLowerEndcap(0), fUpperEndcap(0), fLatterTwisted(0), fFormerTwisted(0),
+     fInnerHype(0), fOuterHype(0),
+     fCubicVolume(rhs.fCubicVolume), fSurfaceArea(rhs.fSurfaceArea),
++    fRebuildPolyhedron(false), fpPolyhedron(0),
+     fLastInside(rhs.fLastInside), fLastNormal(rhs.fLastNormal),
+     fLastDistanceToIn(rhs.fLastDistanceToIn),
+     fLastDistanceToOut(rhs.fLastDistanceToOut),
+     fLastDistanceToInWithV(rhs.fLastDistanceToInWithV),
+     fLastDistanceToOutWithV(rhs.fLastDistanceToOutWithV)
+ {
+-  for (auto i=0; i<2; ++i)
++  for (size_t i=0; i<2; ++i)
+   {
+     fEndZ[i] = rhs.fEndZ[i];
+     fEndInnerRadius[i] = rhs.fEndInnerRadius[i];
+@@ -274,7 +296,7 @@ G4TwistedTubs& G4TwistedTubs::operator = (const G4TwistedTubs& rhs)
+    fLastDistanceToInWithV= rhs.fLastDistanceToInWithV;
+    fLastDistanceToOutWithV= rhs.fLastDistanceToOutWithV;
+  
+-   for (auto i=0; i<2; ++i)
++   for (size_t i=0; i<2; ++i)
+    {
+      fEndZ[i] = rhs.fEndZ[i];
+      fEndInnerRadius[i] = rhs.fEndInnerRadius[i];
+@@ -285,7 +307,7 @@ G4TwistedTubs& G4TwistedTubs::operator = (const G4TwistedTubs& rhs)
+  
+    CreateSurfaces();
+    fRebuildPolyhedron = false;
+-   delete fpPolyhedron; fpPolyhedron = nullptr;
++   delete fpPolyhedron; fpPolyhedron = 0;
+ 
+    return *this;
+ }
+@@ -302,49 +324,245 @@ void G4TwistedTubs::ComputeDimensions(G4VPVParameterisation* /* p */ ,
+               "G4TwistedTubs does not support Parameterisation.");
+ }
+ 
++
+ //=====================================================================
+-//* BoundingLimits ----------------------------------------------------
++//* CalculateExtent ---------------------------------------------------
+ 
+-void G4TwistedTubs::BoundingLimits(G4ThreeVector& pMin,
+-                                   G4ThreeVector& pMax) const
++G4bool G4TwistedTubs::CalculateExtent( const EAxis              axis,
++                                       const G4VoxelLimits     &voxelLimit,
++                                       const G4AffineTransform &transform,
++                                             G4double          &min,
++                                             G4double          &max ) const
+ {
++
++  G4SolidExtentList  extentList( axis, voxelLimit );
+   G4double maxEndOuterRad = (fEndOuterRadius[0] > fEndOuterRadius[1] ?
+                              fEndOuterRadius[0] : fEndOuterRadius[1]);
+-  pMin.set(-maxEndOuterRad,-maxEndOuterRad,-fZHalfLength);
+-  pMax.set( maxEndOuterRad, maxEndOuterRad, fZHalfLength);
++  G4double maxEndInnerRad = (fEndInnerRadius[0] > fEndInnerRadius[1] ?
++                             fEndInnerRadius[0] : fEndInnerRadius[1]);
++  G4double maxphi         = (std::fabs(fEndPhi[0]) > std::fabs(fEndPhi[1]) ?
++                             std::fabs(fEndPhi[0]) : std::fabs(fEndPhi[1]));
++   
++  //
++  // Choose phi size of our segment(s) based on constants as
++  // defined in meshdefs.hh
++  //
++  // G4int numPhi = kMaxMeshSections;
++  G4double sigPhi = 2*maxphi + fDPhi;
++  G4double rFudge = 1.0/std::cos(0.5*sigPhi);
++  G4double fudgeEndOuterRad = rFudge * maxEndOuterRad;
++  
++  //
++  // We work around in phi building polygons along the way.
++  // As a reasonable compromise between accuracy and
++  // complexity (=cpu time), the following facets are chosen:
++  //
++  //   1. If fOuterRadius/maxEndOuterRad > 0.95, approximate
++  //      the outer surface as a cylinder, and use one
++  //      rectangular polygon (0-1) to build its mesh.
++  //
++  //      Otherwise, use two trapazoidal polygons that 
++  //      meet at z = 0 (0-4-1)
++  //
++  //   2. If there is no inner surface, then use one
++  //      polygon for each entire endcap.  (0) and (1)
++  //
++  //      Otherwise, use a trapazoidal polygon for each
++  //      phi segment of each endcap.    (0-2) and (1-3)
++  //
++  //   3. For the inner surface, if fInnerRadius/maxEndInnerRad > 0.95,
++  //      approximate the inner surface as a cylinder of
++  //      radius fInnerRadius and use one rectangular polygon
++  //      to build each phi segment of its mesh.   (2-3)
++  //
++  //      Otherwise, use one rectangular polygon centered
++  //      at z = 0 (5-6) and two connecting trapazoidal polygons
++  //      for each phi segment (2-5) and (3-6).
++  //
+ 
+-  // Check correctness of the bounding box
++  G4bool splitOuter = (fOuterRadius/maxEndOuterRad < 0.95);
++  G4bool splitInner = (fInnerRadius/maxEndInnerRad < 0.95);
++  
++  //
++  // Vertex assignments (v and w arrays)
++  // [0] and [1] are mandatory
++  // the rest are optional
++  //
++  //     +                     -
++  //      [0]------[4]------[1]      <--- outer radius
++  //       |                 |       
++  //       |                 |       
++  //      [2]---[5]---[6]---[3]      <--- inner radius
++  //
++
++  G4ClippablePolygon endPoly1, endPoly2;
++  
++  G4double phimax   = maxphi + 0.5*fDPhi;
++  if ( phimax > pi/2)  { phimax = pi-phimax; }
++  G4double phimin   = - phimax;
++
++  G4ThreeVector v0, v1, v2, v3, v4, v5, v6;   // -ve phi verticies for polygon
++  G4ThreeVector w0, w1, w2, w3, w4, w5, w6;   // +ve phi verticies for polygon
++
++  //
++  // decide verticies of -ve phi boundary
+   //
+-  if (pMin.x() >= pMax.x() || pMin.y() >= pMax.y() || pMin.z() >= pMax.z())
++  
++  G4double cosPhi = std::cos(phimin);
++  G4double sinPhi = std::sin(phimin);
++ 
++  // Outer hyperbolic surface  
++
++  v0 = transform.TransformPoint( 
++       G4ThreeVector(fudgeEndOuterRad*cosPhi, fudgeEndOuterRad*sinPhi, 
++                     + fZHalfLength));
++  v1 = transform.TransformPoint( 
++       G4ThreeVector(fudgeEndOuterRad*cosPhi, fudgeEndOuterRad*sinPhi, 
++                     - fZHalfLength));
++  if (splitOuter)
+   {
+-    std::ostringstream message;
+-    message << "Bad bounding box (min >= max) for solid: "
+-            << GetName() << " !"
+-            << "\npMin = " << pMin
+-            << "\npMax = " << pMax;
+-    G4Exception("G4TwistedTubs::BoundingLimits()", "GeomMgt0001",
+-                JustWarning, message);
+-    DumpInfo();
++     v4 = transform.TransformPoint(
++          G4ThreeVector(fudgeEndOuterRad*cosPhi, fudgeEndOuterRad*sinPhi, 0));
+   }
+-}
++  
++  // Inner hyperbolic surface  
+ 
+-//=====================================================================
+-//* CalculateExtent ---------------------------------------------------
++  G4double zInnerSplit = 0.;
++  if (splitInner)
++  {
++     v2 = transform.TransformPoint( 
++          G4ThreeVector(maxEndInnerRad*cosPhi, maxEndInnerRad*sinPhi, 
++                        + fZHalfLength));
++     v3 = transform.TransformPoint( 
++          G4ThreeVector(maxEndInnerRad*cosPhi, maxEndInnerRad*sinPhi, 
++                        - fZHalfLength));
++      
++     // Find intersection of tangential line of inner
++     // surface at z = fZHalfLength and line r=fInnerRadius.
++     G4double dr = fZHalfLength * fTanInnerStereo2;
++     G4double dz = maxEndInnerRad;
++     zInnerSplit = fZHalfLength + (fInnerRadius - maxEndInnerRad) * dz / dr;
++
++     // Build associated vertices
++     v5 = transform.TransformPoint( 
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi, 
++                        + zInnerSplit));
++     v6 = transform.TransformPoint( 
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi, 
++                        - zInnerSplit));
++  }
++  else
++  {
++     v2 = transform.TransformPoint(
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi, 
++                        + fZHalfLength));
++     v3 = transform.TransformPoint(
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi, 
++                        - fZHalfLength));
++  }
+ 
+-G4bool
+-G4TwistedTubs::CalculateExtent(const EAxis pAxis,
+-                               const G4VoxelLimits& pVoxelLimit,
+-                               const G4AffineTransform& pTransform,
+-                                     G4double& pMin, G4double& pMax) const
+-{
+-  G4ThreeVector bmin, bmax;
++  //
++  // decide vertices of +ve phi boundary
++  // 
+ 
+-  // Get bounding box
+-  BoundingLimits(bmin,bmax);
++  cosPhi = std::cos(phimax);
++  sinPhi = std::sin(phimax);
++   
++  // Outer hyperbolic surface  
++  
++  w0 = transform.TransformPoint(
++       G4ThreeVector(fudgeEndOuterRad*cosPhi, fudgeEndOuterRad*sinPhi,
++                     + fZHalfLength));
++  w1 = transform.TransformPoint(
++       G4ThreeVector(fudgeEndOuterRad*cosPhi, fudgeEndOuterRad*sinPhi,
++                     - fZHalfLength));
++  if (splitOuter)
++  {
++     G4double r = rFudge*fOuterRadius;
++     
++     w4 = transform.TransformPoint(G4ThreeVector( r*cosPhi, r*sinPhi, 0 ));
++      
++     AddPolyToExtent( v0, v4, w4, w0, voxelLimit, axis, extentList );
++     AddPolyToExtent( v4, v1, w1, w4, voxelLimit, axis, extentList );
++  }
++  else
++  {
++     AddPolyToExtent( v0, v1, w1, w0, voxelLimit, axis, extentList );
++  }
++  
++  // Inner hyperbolic surface
++  
++  if (splitInner)
++  {
++     w2 = transform.TransformPoint(
++          G4ThreeVector(maxEndInnerRad*cosPhi, maxEndInnerRad*sinPhi, 
++                        + fZHalfLength));
++     w3 = transform.TransformPoint(
++          G4ThreeVector(maxEndInnerRad*cosPhi, maxEndInnerRad*sinPhi, 
++                        - fZHalfLength));
++          
++     w5 = transform.TransformPoint(
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi,
++                        + zInnerSplit));
++     w6 = transform.TransformPoint(
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi,
++                        - zInnerSplit));
++                                   
++     AddPolyToExtent( v3, v6, w6, w3, voxelLimit, axis, extentList );
++     AddPolyToExtent( v6, v5, w5, w6, voxelLimit, axis, extentList );
++     AddPolyToExtent( v5, v2, w2, w5, voxelLimit, axis, extentList );
++     
++  }
++  else
++  {
++     w2 = transform.TransformPoint(
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi,
++                        + fZHalfLength));
++     w3 = transform.TransformPoint(
++          G4ThreeVector(fInnerRadius*cosPhi, fInnerRadius*sinPhi,
++                        - fZHalfLength));
++
++     AddPolyToExtent( v3, v2, w2, w3, voxelLimit, axis, extentList );
++  }
+ 
+-  // Find extent
+-  G4BoundingEnvelope bbox(bmin,bmax);
+-  return bbox.CalculateExtent(pAxis,pVoxelLimit,pTransform,pMin,pMax);
++  //
++  // Endplate segments
++  //
++  AddPolyToExtent( v1, v3, w3, w1, voxelLimit, axis, extentList );
++  AddPolyToExtent( v2, v0, w0, w2, voxelLimit, axis, extentList );
++  
++  //
++  // Return min/max value
++  //
++  return extentList.GetExtent( min, max );
++}
++
++
++//=====================================================================
++//* AddPolyToExtent ---------------------------------------------------
++
++void G4TwistedTubs::AddPolyToExtent( const G4ThreeVector &v0,
++                                     const G4ThreeVector &v1,
++                                     const G4ThreeVector &w1,
++                                     const G4ThreeVector &w0,
++                                     const G4VoxelLimits &voxelLimit,
++                                     const EAxis          axis,
++                                     G4SolidExtentList   &extentList ) 
++{
++    // Utility function for CalculateExtent
++    //
++    G4ClippablePolygon phiPoly;
++
++    phiPoly.AddVertexInOrder( v0 );
++    phiPoly.AddVertexInOrder( v1 );
++    phiPoly.AddVertexInOrder( w1 );
++    phiPoly.AddVertexInOrder( w0 );
++
++    if (phiPoly.PartialClip( voxelLimit, axis ))
++    {
++        phiPoly.SetNormal( (v1-v0).cross(w0-v0).unit() );
++        extentList.AddSurface( phiPoly );
++    }
+ }
+ 
+ 
+@@ -436,8 +654,9 @@ G4ThreeVector G4TwistedTubs::SurfaceNormal(const G4ThreeVector& p) const
+ 
+    G4ThreeVector xx;
+    G4ThreeVector bestxx;
++   G4int i;
+    G4int besti = -1;
+-   for (auto i=0; i<6; ++i)
++   for (i=0; i< 6; i++)
+    {
+       G4double tmpdistance = surfaces[i]->DistanceTo(p, xx);
+       if (tmpdistance < distance)
+@@ -471,9 +690,9 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p,
+    // checking last value
+    //
+    
+-   G4ThreeVector* tmpp;
+-   G4ThreeVector* tmpv;
+-   G4double* tmpdist;
++   G4ThreeVector *tmpp;
++   G4ThreeVector *tmpv;
++   G4double      *tmpdist;
+    if ((fLastDistanceToInWithV.p == p) && (fLastDistanceToInWithV.vec == v))
+    {
+      return fLastDistanceToIn.value;
+@@ -506,7 +725,7 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p,
+        G4ThreeVector normal = SurfaceNormal(p);
+        if (normal*v < 0)
+        {
+-         *tmpdist = 0.;
++         *tmpdist = 0;
+          return fLastDistanceToInWithV.value;
+        } 
+      }
+@@ -520,7 +739,7 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p,
+ 
+    // find intersections and choose nearest one.
+    //
+-   G4VTwistSurface* surfaces[6];
++   G4VTwistSurface *surfaces[6];
+    surfaces[0] = fLowerEndcap;
+    surfaces[1] = fUpperEndcap;
+    surfaces[2] = fLatterTwisted;
+@@ -530,7 +749,8 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p,
+    
+    G4ThreeVector xx;
+    G4ThreeVector bestxx;
+-   for (auto i=0; i<6; ++i)
++   G4int i;
++   for (i=0; i< 6; i++)
+    {
+       G4double tmpdistance = surfaces[i]->DistanceToIn(p, v, xx);
+       if (tmpdistance < distance)
+@@ -557,8 +777,8 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p) const
+    // checking last value
+    //
+    
+-   G4ThreeVector* tmpp;
+-   G4double* tmpdist;
++   G4ThreeVector *tmpp;
++   G4double      *tmpdist;
+    if (fLastDistanceToIn.p == p)
+    {
+      return fLastDistanceToIn.value;
+@@ -588,7 +808,7 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p) const
+       case (kOutside) :
+       {
+          // Initialize
+-         G4double distance = kInfinity;   
++         G4double      distance = kInfinity;   
+ 
+          // find intersections and choose nearest one.
+          G4VTwistSurface *surfaces[6];
+@@ -599,9 +819,10 @@ G4double G4TwistedTubs::DistanceToIn (const G4ThreeVector& p) const
+          surfaces[4] = fInnerHype;
+          surfaces[5] = fOuterHype;
+ 
++         G4int i;
+          G4ThreeVector xx;
+          G4ThreeVector bestxx;
+-         for (auto i=0; i<6; ++i)
++         for (i=0; i< 6; i++)
+          {
+             G4double tmpdistance = surfaces[i]->DistanceTo(p, xx);
+             if (tmpdistance < distance)
+@@ -642,9 +863,9 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p,
+    // checking last value
+    //
+    
+-   G4ThreeVector* tmpp;
+-   G4ThreeVector* tmpv;
+-   G4double* tmpdist;
++   G4ThreeVector *tmpp;
++   G4ThreeVector *tmpv;
++   G4double      *tmpdist;
+    if ((fLastDistanceToOutWithV.p == p) && (fLastDistanceToOutWithV.vec == v) )
+    {
+      return fLastDistanceToOutWithV.value;
+@@ -693,11 +914,11 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p,
+    
+    // Initialize
+    //
+-   G4double distance = kInfinity;
++   G4double      distance = kInfinity;
+        
+    // find intersections and choose nearest one.
+    //
+-   G4VTwistSurface* surfaces[6];
++   G4VTwistSurface *surfaces[6];
+    surfaces[0] = fLatterTwisted;
+    surfaces[1] = fFormerTwisted;
+    surfaces[2] = fInnerHype;
+@@ -705,10 +926,11 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p,
+    surfaces[4] = fLowerEndcap;
+    surfaces[5] = fUpperEndcap;
+    
++   G4int i;
+    G4int besti = -1;
+    G4ThreeVector xx;
+    G4ThreeVector bestxx;
+-   for (auto i=0; i<6; ++i)
++   for (i=0; i< 6; i++)
+    {
+       G4double tmpdistance = surfaces[i]->DistanceToOut(p, v, xx);
+       if (tmpdistance < distance)
+@@ -747,8 +969,8 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p ) const
+    // checking last value
+    //
+    
+-   G4ThreeVector* tmpp;
+-   G4double* tmpdist;
++   G4ThreeVector *tmpp;
++   G4double      *tmpdist;
+    if (fLastDistanceToOut.p == p)
+    {
+       return fLastDistanceToOut.value;
+@@ -782,7 +1004,7 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p ) const
+          G4double      distance = kInfinity;
+    
+          // find intersections and choose nearest one.
+-         G4VTwistSurface* surfaces[6];
++         G4VTwistSurface *surfaces[6];
+          surfaces[0] = fLatterTwisted;
+          surfaces[1] = fFormerTwisted;
+          surfaces[2] = fInnerHype;
+@@ -790,9 +1012,10 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p ) const
+          surfaces[4] = fLowerEndcap;
+          surfaces[5] = fUpperEndcap;
+ 
++         G4int i;
+          G4ThreeVector xx;
+          G4ThreeVector bestxx;
+-         for (auto i=0; i<6; ++i)
++         for (i=0; i< 6; i++)
+          {
+             G4double tmpdistance = surfaces[i]->DistanceTo(p, xx);
+             if (tmpdistance < distance)
+@@ -812,7 +1035,7 @@ G4double G4TwistedTubs::DistanceToOut( const G4ThreeVector& p ) const
+       }
+    } // switch end
+ 
+-   return 0.;
++   return 0;
+ }
+ 
+ //=====================================================================
+@@ -863,8 +1086,7 @@ G4VisExtent G4TwistedTubs::GetExtent() const
+ {
+   // Define the sides of the box into which the G4Tubs instance would fit.
+ 
+-  G4double maxEndOuterRad = (fEndOuterRadius[0] > fEndOuterRadius[1] ?
+-                             fEndOuterRadius[0] : fEndOuterRadius[1]);
++  G4double maxEndOuterRad = (fEndOuterRadius[0] > fEndOuterRadius[1] ? 0 : 1);
+   return G4VisExtent( -maxEndOuterRad, maxEndOuterRad, 
+                       -maxEndOuterRad, maxEndOuterRad, 
+                       -fZHalfLength, fZHalfLength );
+@@ -877,17 +1099,16 @@ G4Polyhedron* G4TwistedTubs::CreatePolyhedron () const
+ {
+   // number of meshes
+   //
+-  G4double absPhiTwist = std::abs(fPhiTwist);
+-  G4double dA = std::max(fDPhi,absPhiTwist);
++  G4double dA = std::max(fDPhi,fPhiTwist);
+   const G4int k =
+     G4int(G4Polyhedron::GetNumberOfRotationSteps() * dA / twopi) + 2;
+   const G4int n =
+-    G4int(G4Polyhedron::GetNumberOfRotationSteps() * absPhiTwist / twopi) + 2;
++    G4int(G4Polyhedron::GetNumberOfRotationSteps() * fPhiTwist / twopi) + 2;
+ 
+   const G4int nnodes = 4*(k-1)*(n-2) + 2*k*k ;
+   const G4int nfaces = 4*(k-1)*(n-1) + 2*(k-1)*(k-1) ;
+ 
+-  G4Polyhedron* ph = new G4Polyhedron;
++  G4Polyhedron *ph=new G4Polyhedron;
+   typedef G4double G4double3[3];
+   typedef G4int G4int4[4];
+   G4double3* xyz = new G4double3[nnodes];  // number of nodes 
+@@ -912,7 +1133,7 @@ G4Polyhedron* G4TwistedTubs::CreatePolyhedron () const
+ 
+ G4Polyhedron* G4TwistedTubs::GetPolyhedron () const
+ {
+-  if (fpPolyhedron == nullptr ||
++  if (!fpPolyhedron ||
+       fRebuildPolyhedron ||
+       fpPolyhedron->GetNumberOfRotationStepsAtTimeOfCreation() !=
+       fpPolyhedron->GetNumberOfRotationSteps())
+@@ -1030,7 +1251,7 @@ G4double G4TwistedTubs::GetSurfaceArea()
+ G4ThreeVector G4TwistedTubs::GetPointOnSurface() const
+ {
+ 
+-  G4double z = G4RandFlat::shoot(fEndZ[0],fEndZ[1]);
++  G4double  z = G4RandFlat::shoot(fEndZ[0],fEndZ[1]);
+   G4double phi , phimin, phimax ;
+   G4double x   , xmin,   xmax ;
+   G4double r   , rmin,   rmax ;

@@ -14,6 +14,7 @@ class BuildConfig:
     config_alias: str
 
     n_proc: int = 1
+    dry_run: bool = False
 
     def __str__(self) -> str:
         return self.config_alias

@@ -1,0 +1,13 @@
+diff --git a/cmake/modules/FindHepPDT.cmake b/cmake/modules/FindHepPDT.cmake
+index 792efd3c4..932816c81 100644
+--- a/cmake/modules/FindHepPDT.cmake
++++ b/cmake/modules/FindHepPDT.cmake
+@@ -36,7 +36,7 @@ if (HEPPDT_INCLUDE_DIR)
+   if (EXISTS ${HEPPDT_INCLUDE_DIR}/HepPDT/defs.h)
+     file(STRINGS ${HEPPDT_INCLUDE_DIR}/HepPDT/defs.h HEPPDT_VERSION_STRING_CONTENT REGEX "^#define[ ]+PACKAGE_VERSION[ ]+\"" )
+     if (HEPPDT_VERSION_STRING_CONTENT)
+-      string(REGEX MATCH "[1234567890\.]+[a-zA-Z]*" HEPPDT_VERSION ${HEPPDT_VERSION_STRING_CONTENT})
++      string(REGEX MATCH "[1234567890\\.]+[a-zA-Z]*" HEPPDT_VERSION ${HEPPDT_VERSION_STRING_CONTENT})
+     endif()
+   endif()
+ endif()
