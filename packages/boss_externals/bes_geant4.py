@@ -9,7 +9,7 @@ class BesGeant4(BasePackage):
     def __init__(self, build_config: BuildConfig, pre_env_cmds: list[str] = []) -> None:
         super().__init__(build_config, pre_env_cmds)
 
-        self.data_dir = (build_config.install_dir / 'share' / 'Geant4-data' / self.version).resolve()
+        self.data_dir: Path = (build_config.install_dir / 'share' / 'Geant4-data' / self.version).resolve()
 
     @property
     @abstractmethod
@@ -88,7 +88,7 @@ class BesGeant4(BasePackage):
 
         else:
             return [
-                f'mkdir -vp {self.data_dir}',
+                f'mkdir -vp {self.data_dir.parent}',
                 f'mv -v {local_data_dir} {self.data_dir}',
                 f'ln -sv {self.data_dir} {local_data_dir}'
             ]
