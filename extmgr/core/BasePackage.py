@@ -15,8 +15,6 @@ CmdList = list[str]
 
 
 class BasePackage(ABC, ILog):
-    _packages: list['BasePackage'] = []  # All packages that have been created
-
     def __init__(self) -> None:
         ABC.__init__(self)
         ILog.__init__(self)
