@@ -3,103 +3,144 @@ A tool to help installing and managing external libraries with different version
 
 ## Usage
 
-By so far, availabe packages are quite limited. You can add more packages by inheriting `BasePackage` class. There are some references in `packages` directory.
+By so far, availabe packages are quite limited. You can add more packages by inheriting `BasePackage` class. There are some references in `extmgr/distributions/dist_python` directory.
 
-### Add `package` and `release`
+### Add `package` and `distribution`
 
-When we need a specific environment, usually we are requiring a specific combination of libraries and versions. Such combination is called a `release`, and its components are called `packages`. To prepare a `release`, we need to add some `package` first.
+When we need a specific environment, usually we are requiring a specific combination of libraries and versions. Such combination is called a `distribution`, and its components are called `packages`. A packages directory should be:
+
+```
+- extmgr/distributions/dist_python
+    - subdir1
+        - __init__.py
+        - PackageA.py
+        - PackageB.py
+        - ...
+
+    - subdir2
+        - __init__.py
+        - PackageC.py
+        - PackageD.py
+        - ...
+
+    - __init__.py # import all packages in sub-directories and specify the distribution
+```
 
 #### Prepare `package`
 
-There are 2 packages in `packages/examples`. They are all inherited from `BasePackage` in `core/BasePackage.py`. You can add more packages by inheriting `BasePackage` class.
+There are 2 packages in `extmgr/distributions/dist_python/examples`. They are all inherited from `BasePackage` in `extmgr/core/BasePackage.py`. You can add more packages by inheriting `BasePackage` class.
 
 `BasePackage` has already defined some basic attributes and methods. You need to implement the following methods:
 
 ```python
 @property
-    @abstractmethod
-    def name(self) -> str:
-        ...
+@abstractmethod
+def name(self) -> str:
+    """
+    Return the package name
 
-    @property
-    @abstractmethod
-    def version(self) -> str:
-        ...
+    Returns:
+        str: Package name
+    """
+    raise NotImplementedError
 
-    @abstractmethod
-    def download(self) -> list[str]:
-        ...
+@property
+@abstractmethod
+def version(self) -> str:
+    """
+    Return the package version
 
-    @abstractmethod
-    def patch(self) -> list[str]:
-        ...
+    Returns:
+        str: Package version
+    """
+    raise NotImplementedError
 
-    @abstractmethod
-    def configure(self) -> list[str]:
-        ...
+@abstractmethod
+def prepare_src_steps(self) -> list[tuple[StepName, CmdList]]:
+    """
+    Return a list of `(step_name, step_commands)` tuples. The `step_name` will be used as the
+    key in the `build_stamp` file to store the step's timestamp. The `step_commands` should
+    be a list of bash commands to be executed.
 
-    @abstractmethod
-    def build(self) -> list[str]:
-        ...
+    You should use this method to prepare the source code for building. This could include
+    downloading the source code, extracting it, patching it, etc.
 
-    @abstractmethod
-    def install(self) -> list[str]:
-        ...
+    Returns:
+        list[tuple[StepName, CmdList]]: List of `(step_name, [step_commands])` tuples
+    """
+    raise NotImplementedError
 
-    @abstractmethod
-    def setup_cmds(self) -> dict[str, list[str]]:
-        """
-        Return `{shell: setup_cmd}` dictionary where `shell` is the shell type 
-        and `setup_cmd` is the list of commands to be executed
-        """
-        ...
+@abstractmethod
+def build_steps(self) -> list[tuple[StepName, CmdList]]:
+    """
+    Return a list of `(step_name, step_commands)` tuples. The `step_name` will be used as the
+    key in the `build_stamp` file to store the step's timestamp. The `step_commands` should
+    be a list of bash commands to be executed.
+
+    You should use this method to build and install the package. This could include running
+    `configure`, `make`, `make install`, etc.
+
+    Returns:
+        list[tuple[StepName, CmdList]]: List of `(step_name, [step_commands])` tuples
+    """
+    raise NotImplementedError
+
+@abstractmethod
+def setup_cmds(self) -> dict[str, CmdList]:
+    """
+    Return `{shell_type: setup_cmd}` dictionary where `shell_type` is the type of shell
+    (`sh`, `csh`, ...) and `setup_cmd` is the list of commands to be executed
+    in that shell.
+
+    You should use this method to set up the environment variables, paths, etc. needed to
+    use the package.
+
+    Returns:
+        dict[str, CmdList]: `{shell_type: setup_cmd}` dictionary
+    """
+    raise NotImplementedError
 ```
 
-For `name` and `version`, you should return the name ("fmt" for example) and version ("10.2.1" for example). They will be used to create corresponding directories, so make sure they are valid for directory names.
+For `name` and `version`, you should return string of name ("fmt" for example) and version ("10.2.1" for example). They will be used to create corresponding directories, so make sure they are valid for directory names.
 
-For `download`, `patch`, `configure`, `build`, `install`, they should return a list of bash commands to download, patch, configure, build and install the package. Each method will be called only when the previous one is successfully executed, so you can add some `if` statements to return different commands based on the situation.
+`prepare_src_steps` and `build_steps` should return a list of tuples. Each tuple should contain a step name and a list of bash commands. The step name will be used as the key to store the timestamp of the step in the `step_stamp.json` file. The bash commands will be executed in order.
+
+The difference between `prepare_src_steps` and `build_steps` is that steps in `prepare_src_steps` are common for all build types, they will only be executed for once. For example, downloading and extracting source code are common for all build types. But the steps in `build_steps` are specific for each build type. For example, building and installing the package are different for `Debug` and `Release` build types.
 
 For `setup_cmds`, it should return a dictionary where the key is the shell type and the value is a list of commands to be executed. The shell type can be whatever you want, but it will be used to generate the setup script. For my own needs, I use `sh` and `csh` as the shell type. You can add more if you want.
 
-There are some wrapper methods in `BasePackage` that you can use to make your code simpler. See `packages/examples` and `core/BasePackage.py` for more details.
+There are some wrapper methods in `BasePackage` that you can use to make your code simpler. See `extmgr/distributions/dist_python/examples` and `extmgr/core/BasePackage.py` for more details.
 
+#### Prepare `distribution`
 
-
-#### Prepare `release`
-
-After you have prepared all the packages you need, you can create a `release`. There are 2 ways to specify a `release`:
+Make sure your packages has been imported, then you can create a distribution by calling `Executor().register_distribution` in `extmgr/distributions/dist_python/__init__.py`.
 
 ```python
-releases = {
-    'releaseA': {
-        'fmt': Fmt_11_0_2,
-        'catch2': Catch2_v3_7_1
-    },
+# first import your packages here
 
-    'releaseB': {
-        'tobuild': {
-            'fmt': Fmt_10_2_1,
-            'catch2': Catch2_v3_5_4},
+from extmgr.core import Executor
 
-        'depends': {
-            'fmt': ['catch2'],  # if fmt depends on catch2, add it here
-        }
+Executor().register_distribution(
+    name="my_distribution",
+    packages=[
+        ('pkgA', 'versionA'),
+        ('pkgB', 'versionB'),
+        ...
+    ],
+    dependencies={
+        'pkgA': ['pkgB', 'pkgC'],
+        'pkgB': ['pkgD'],
+        ...
     }
-}
+)
 ```
-
-If there is no dependency between packages, you can use the first way. If there is, you can use the second way. In the second way, you must define both `tobuild` and `depends` keys. You can specify the dependencies in the `depends` field (therefore `tobuild` and `depends` cannot be used as package names).
-
-Once the dependencies are specified, packages will be installed in the order of the dependency chain. Before one package is installed, it will also execute the `setup_cmds` of its dependencies.
-
-Make sure that releases dictionary is imported in `releases.py` in the root directory, so that the main script can find it.
 
 ### Run Installation
 
-After you have prepared the packages and releases, you can run the main script to install the packages.
+After you have prepared all the packages and distributions, you can run the main script to install packages.
 
 ```bash
-python3 main.py -r releaseA -t Debug -p /path/to/MyExternals -j20
+python3 main.py [-h] -p PREFIX -d {distA, distB, distC} [-j [JOBS]] [--build-dir BUILD_DIR] [--patch-dir PATCH_DIR] [--dry-run] [-opt | -dbg | -rwd]
 ```
 
 When command finishes, you will find a directory structure like this in `/path/to/MyExternals`:
@@ -115,19 +156,19 @@ When command finishes, you will find a directory structure like this in `/path/t
         - src
         - x86_64-el9-gcc11-dbg
         - step_stamp.json
-- setup
-    - releaseA
+- setup-scripts
+    - distA
         - x86_64-el9-gcc11-dbg.sh
         - x86_64-el9-gcc11-dbg.csh
 ```
 
-Now by sourcing setup scripts in `setup/releaseA` you can use `fmt-11.0.2` and `Catch2-3.7.1` in your environment.
+Now by sourcing setup scripts in `setup-scripts/distA` you can use `fmt-11.0.2` and `Catch2-3.7.1` in your environment.
 
 If you want to install another release or with another cmake-build-type, you can just run the command again with different arguments:
 
 ```bash
-python3 main.py -r releaseB -t Debug -p /path/to/MyExternals -j20
-python3 main.py -r releaseA -t Release -p /path/to/MyExternals -j20
+python3 main.py -d distA -p /path/to/MyExternals -j20
+python3 main.py -d distB -p /path/to/MyExternals -j -dbg
 ```
 
 The direcotry structure will be updated to:
@@ -154,32 +195,32 @@ The direcotry structure will be updated to:
         - x86_64-el9-gcc11-opt
         - step_stamp.json
 - setup
-    - releaseA
+    - distA
         - x86_64-el9-gcc11-dbg.sh
         - x86_64-el9-gcc11-opt.sh
         - x86_64-el9-gcc11-dbg.csh
         - x86_64-el9-gcc11-opt.csh
-    - releaseB
+    - distB
         - x86_64-el9-gcc11-dbg.sh
         - x86_64-el9-gcc11-dbg.csh
 ```
 
-Same versions of the package share the source directory, so they will not be downloaded and extracted again. If one package is already installed, it will not be reinstalled, only the setup script will be generated.
+Same versions of one package share its source directory, so they will not be downloaded and extracted again. If one package is already installed, it will not be reinstalled, only the setup script will be generated.
 
-> Make your install prefix stable, so that the packages you have already installed will not be reinstalled.
+> Make your install prefix reusable, so that the packages you have already installed will not be reinstalled.
 
 ### Force Reinstall
 
-> **If you just want to update setup script, you don't need to remove anything. Just update the `setup_cmds` function and run the main script again.**
+> **If you just want to update setup script, you don't need to do anything. Just update the `setup_cmds` function and run main script again.**
 
-If you want to re-execute any step of the installation, you can remove corresponding items in `step_stamp.json`. For example, if you want to re-execute the `build` step of `fmt-11.0.2`, you can remove the `x86_64-OS-gcc11-build` in `fmt/11.0.2/step_stamp.json` file.
+If you want to re-execute any step of the installation, you can remove corresponding items in `step_stamp.json`. For example, if you want to re-execute `build` step of `fmt-11.0.2`, you can remove the `x86_64-OS-gcc11-build` in `fmt/11.0.2/step_stamp.json` file.
 
-> Since source directory is shared with different `CMAKE_BUILD_TYPE` installation, key `download` and `patch` are unique in `step_stamp.json`.
+> Since source directory is shared with different `CMAKE_BUILD_TYPE` installation, some keys are unique in `step_stamp.json`.
 
-You can also remove the whole directory of any version, so that the package in that version will be reinstalled from scratch.
+You can also remove the whole package directory of any version, so that the package in that version will be reinstalled from scratch.
 
 
 ### Activate Environment
 
-After you have installed the packages, you can activate the environment by sourcing the setup script in `setup` directory.
+After you have installed the packages, you can activate the environment by sourcing the setup script in `setup-script` directory.
 

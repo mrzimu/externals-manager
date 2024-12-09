@@ -6,15 +6,15 @@ from typing import Literal
 @dataclass
 class BuildConfig:
     patch_dir: Path
-    build_dir: Path
-    install_dir: Path
+    build_prefix: Path
+    install_prefix: Path
 
-    cmake_build_type: Literal['Release', 'Debug']
+    cmake_build_type: Literal['Release', 'Debug', 'RelWithDebInfo']
 
-    config_alias: str
+    build_flag: str
 
-    n_proc: int = 1
+    n_jobs: int = 1
     dry_run: bool = False
 
     def __str__(self) -> str:
-        return self.config_alias
+        return self.build_flag
