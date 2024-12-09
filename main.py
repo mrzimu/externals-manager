@@ -1,20 +1,18 @@
 import argparse
 import os
 import logging
-import subprocess
 import platform
+import subprocess
 from pathlib import Path
 from typing import Literal
-from collections import defaultdict, deque
 
-from core import BuildConfig, BasePackage
-from releases import releases
+import extmgr
 
 ##############################################################################
 ############################### Set up logging ###############################
 ##############################################################################
 logging.basicConfig(level=logging.INFO,
-                    format='[External-Manager] %(name)-20s     %(levelname)-7s     %(message)s',
+                    format='[External-Manager]  %(name)-20s     %(levelname)-7s     %(message)s',
                     datefmt='%m-%d %H:%M')
 
 logger = logging.getLogger('Main')
@@ -23,8 +21,6 @@ logger = logging.getLogger('Main')
 ##############################################################################
 ############################## Parse Arguments ###############################
 ##############################################################################
-
-
 def pos_int(value) -> str:
     if value is None or value == '':
         return ''
@@ -42,75 +38,90 @@ def pos_int(value) -> str:
 
 parser = argparse.ArgumentParser(
     prog="python3 main.py",
-    description="Build BOSS external packages",
+    description="build external distributions",
 )
 
-parser.add_argument('-r', '--release',
-                    help="Release version of combinition of external packages",
+parser.add_argument('-p', '--prefix',
+                    help='installations prefix',
                     type=str,
-                    choices=releases,
-                    dest='release',
+                    dest='prefix',
                     action='store',
                     required=True)
 
-parser.add_argument('-t', "--build-type",
-                    help="CMAKE_BUILD_TYPE, Release or Debug",
+parser.add_argument('-d', '--dist',
+                    help='distribution to build',
                     type=str,
-                    choices=["Release", "Debug"],
-                    default="Release",
-                    dest="build_type",
-                    action="store")
+                    dest='dist',
+                    action='store',
+                    choices=list(extmgr.core.Executor().dists.keys()),
+                    required=True)
 
-parser.add_argument('-j', "--jobs",
-                    help="Number of processors to use",
+parser.add_argument('-j', '--jobs',
+                    help='number of processors to use',
                     type=pos_int,
-                    default=os.cpu_count(),
+                    default=1,
                     nargs='?',
                     const='',
                     dest='jobs',
-                    action="store")
-
-parser.add_argument('-p', "--prefix",
-                    help="Install prefix",
-                    type=str,
-                    dest='prefix',
-                    action="store",
-                    required=True)
+                    action='store')
 
 parser.add_argument('--build-dir',
-                    help="Build directory",
+                    help="build directory",
                     type=str,
                     default="build",
                     dest='build_dir',
                     action="store")
 
+parser.add_argument('--patch-dir',
+                    help="patches directory",
+                    type=str,
+                    dest='patch_dir',
+                    action="store")
+
 parser.add_argument('--dry-run',
-                    help="Only show the commands to be executed",
+                    help="only show the commands to be executed",
                     action="store_true",
                     default=False,
                     dest='dry_run')
 
+build_type_group = parser.add_argument_group('build type')
+build_type_mutex = build_type_group.add_mutually_exclusive_group()
+
+build_type_mutex.add_argument('-opt', '--release',
+                              help="build release version",
+                              action='store_true',
+                              default=False,
+                              dest='build_type_opt')
+
+build_type_mutex.add_argument('-dbg', '--debug',
+                              help="build debug version",
+                              action='store_true',
+                              default=False,
+                              dest='build_type_dbg')
+
+build_type_mutex.add_argument('-rwd', '--relwithdebinfo',
+                              help="build release with debug info",
+                              action='store_true',
+                              default=False,
+                              dest='build_type_rwd')
+
+
 args = parser.parse_args()
 
+target_dist = args.dist
 njobs = args.jobs
 install_prefix = Path(args.prefix).resolve()
 build_dir = Path(args.build_dir).resolve()
-patch_dir = (Path(__file__).parent / 'patches').resolve()
+patch_dir = (Path(__file__).parent / 'patches').resolve() if args.patch_dir is None else Path(args.patch_dir).resolve()
 
-if njobs != '' and int(njobs) > os.cpu_count():
-    logger.warning(
-        f"Number of processors to use is larger than the number of available processors, using {os.cpu_count()} instead")
-    njobs = os.cpu_count()
+cmake_build_type: Literal['Release', 'Debug', 'RelWithDebInfo'] = 'Release'
+if args.build_type_opt:
+    cmake_build_type = 'Release'
+elif args.build_type_dbg:
+    cmake_build_type = 'Debug'
+elif args.build_type_rwd:
+    cmake_build_type = 'RelWithDebInfo'
 
-logger.info(f"Release: {args.release}")
-logger.info(f"Build Type: {args.build_type}")
-logger.info(f"Number of jobs: {njobs}")
-logger.info(f"Install Prefix: {install_prefix}")
-logger.info(f"Build Directory: {build_dir}")
-logger.info(f"Patch Directory: {patch_dir}")
-
-if not args.dry_run:
-    build_dir.mkdir(parents=True, exist_ok=True)
 
 ##############################################################################
 ############################ Determine build flag ############################
@@ -133,145 +144,31 @@ except Exception as e:
     logger.error(f"Failed to get OS release info: {e}")
     exit(1)
 
-if args.build_type == 'Release':
-    build_type_alias = 'opt'
-elif args.build_type == 'Debug':
-    build_type_alias = 'dbg'
-else:
-    build_type_alias = args.build_type.lower()
+build_type_alias = {
+    'Release': 'opt',
+    'Debug': 'dbg',
+    'RelWithDebInfo': 'rwd'
+}[cmake_build_type]
 
-config_alias = f'{platform.processor()}-{os_alias}-{gcc_version}-{build_type_alias}'
+build_flag = f'{platform.processor()}-{os_alias}-{gcc_version}-{build_type_alias}'
 
-build_config = BuildConfig(
+build_config = extmgr.BuildConfig(
     patch_dir=patch_dir,
-    build_dir=build_dir,
-    install_dir=install_prefix,
-    cmake_build_type=args.build_type,
-    config_alias=config_alias,
-    n_proc=njobs,
+    build_prefix=build_dir,
+    install_prefix=install_prefix,
+    cmake_build_type=cmake_build_type,
+    build_flag=build_flag,
+    n_jobs=njobs,
     dry_run=args.dry_run
 )
 
-logger.info(f"Build config: {build_config}")
+logger.info(f"Distribution: {target_dist}")
+logger.info(f"Install Prefix: {install_prefix}")
+logger.info(f"Build Directory: {build_dir}")
+logger.info(f"Number of jobs: {njobs}")
+logger.info(f"Patches Directory: {patch_dir}")
+logger.info(f"CMake Build Type: {cmake_build_type}")
+logger.info(f"Build Flag: {build_flag}")
 
-##############################################################################
-########################### Configure build rules ############################
-##############################################################################
-tobuild_dict = {}
-depend_rule_dict = {}
-
-if 'tobuild' in releases[args.release] and 'depends' in releases[args.release]:
-    tobuild_dict: dict[str, BasePackage] = releases[args.release]['tobuild']
-    depend_rule_dict: dict[str, list[str]] = releases[args.release]['depends']
-elif 'tobuild' not in releases[args.release] and 'depends' not in releases[args.release]:
-    tobuild_dict: dict[str, BasePackage] = releases[args.release].copy()
-    depend_rule_dict: dict[str, list[str]] = {k: [] for k in tobuild_dict.keys()}
-else:
-    logger.error("You must specify both 'tobuild' and 'depends' in the release configuration!")
-    exit(1)
-
-# Add empty dependencies for packages not in the dependency list
-for k in tobuild_dict:
-    if k not in depend_rule_dict:
-        depend_rule_dict[k] = []
-
-build_status: dict[str, bool] = {k: False for k in tobuild_dict.keys()}
-
-
-##############################################################################
-####################### Begin to build, do not edit! #########################
-##############################################################################
-
-
-# Determine the build order
-def topological_sort(dependency_dict: dict[str, list[str]]):
-    """
-    Topological sort of a graph represented by a dictionary of dependencies,
-    just to sort the build order of the packages.
-    """
-    in_degree = defaultdict(int)
-    graph = defaultdict(list)
-
-    # Initialize the graph
-    for item, deps in dependency_dict.items():
-        for dep in deps:
-            graph[dep].append(item)
-            in_degree[item] += 1
-        if item not in in_degree:
-            in_degree[item] = 0
-
-    # Find all items with zero in-degree
-    zero_in_degree_queue = deque([item for item in in_degree if in_degree[item] == 0])
-    sorted_order = []
-
-    while zero_in_degree_queue:
-        current_item = zero_in_degree_queue.popleft()
-        sorted_order.append(current_item)
-
-        for neighbor in graph[current_item]:
-            in_degree[neighbor] -= 1
-            if in_degree[neighbor] == 0:
-                zero_in_degree_queue.append(neighbor)
-
-    # Check if there is a cycle
-    if len(sorted_order) != len(in_degree):
-        raise ValueError("The graph has a cycle!")
-
-    return sorted_order
-
-
-build_order = topological_sort(depend_rule_dict)
-
-logger.info(f"Build order: {build_order}")
-
-# Instantiate the package objects
-for pkg_name in build_order:
-
-    # Get the setup commands of the dependencies
-    pre_env_cmds = []
-    for dep in depend_rule_dict[pkg_name]:
-        pre_env_cmds += tobuild_dict[dep].setup_cmds()['sh']
-
-    # Instantiate the package object
-    tobuild_dict[pkg_name] = tobuild_dict[pkg_name](build_config, pre_env_cmds)
-
-# Check if there are packages with the same name
-if len(set([pkg.name for pkg in tobuild_dict.values()])) != len(tobuild_dict):
-    logger.error("There are packages with the same name!")
-    exit(1)
-
-# Build the packages
-for pkg_name in build_order:
-    pkg = tobuild_dict[pkg_name]
-    logger.info(f"Building {pkg.name}-{pkg.version}")
-
-    # Check dependencies
-    for dep in depend_rule_dict[pkg_name]:
-        if not build_status[dep]:
-            logger.error(f"Dependency {dep} of {pkg.name} is not built yet!")
-            exit(1)
-
-    # Build the package
-    if not pkg._make():
-        logger.error(f"Failed to build {pkg.name}-{pkg.version}")
-        exit(1)
-
-    build_status[pkg_name] = True
-    logger.info(f"{pkg.name}-{pkg.version} is built successfully")
-
-# Generate setup scripts
-setup_prefix: Path = install_prefix / 'setup' / args.release / config_alias
-setup_prefix.parent.mkdir(parents=True, exist_ok=True)
-
-setup_cmds: dict[str, list[str]] = defaultdict(list)
-for pkg in tobuild_dict.values():
-    for shell, cmds in pkg.setup_cmds().items():
-        setup_cmds[shell] += ([f'# {pkg.name}'] + cmds + [''])
-
-for suffix, cmds in setup_cmds.items():
-    setup_file = setup_prefix.with_suffix('.' + suffix)
-    with open(setup_file, 'w') as f:
-        f.write('\n'.join(cmds))
-    logger.info(f"Setup script {setup_file} is generated.")
-
-logger.info("All packages are built successfully!")
+pkg_executor = extmgr.Executor()
+pkg_executor.make_distribution(target_dist, build_config)

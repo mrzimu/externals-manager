@@ -1,0 +1,34 @@
+package:
+  name: BesAlist
+  git:
+    url: https://code.ihep.ac.cn/boss/boss_external/besalist.git
+
+  steps:
+    download:
+      - if [ -d @self.source_dir@ ]; then
+      -   rm -rvf @self.source_dir@
+      - fi
+      - git clone --branch @self.git.tag@ @self.git.url@ @self.source_dir@
+    
+    configure:
+      - cmake -B @self.build_dir@ -S @self.source_dir@ \
+      -   -DCMAKE_BUILD_TYPE=@build_config.cmake_build_type@ \
+      -   -DCMAKE_INSTALL_PREFIX=@self.install_dir@
+    
+    build:
+      - cmake --build @self.build_dir@ --target install -j @build_config.n_jobs@
+  
+  setup_cmds:
+    append-env:
+      INCLUDE: "@self.install_dir@/include"
+      LIB: "@self.install_dir@/lib64"
+      LD_LIBRARY_PATH: "@self.install_dir@/lib64"
+
+    scripts:
+      - echo "Setup @self.name@-@self.version@ environment"
+  
+  release:
+    v2024.12.08:
+      version: "2024.12.08"
+      git:
+        tag: "2024.12.08"
