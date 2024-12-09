@@ -4,3 +4,11 @@ from .BesGDML import BesGDML_2_8_1
 from .BesGeant4 import BesGeant4_10_7_2
 from .CERNLIB import CERNLIB_2006120
 from .Gaudi import Gaudi_v38r2
+from .AIDA import AIDA_3_2_1
+from .Boost import Boost_1_85_0
+from .Catch2 import Catch2_2_13_9
+from .CLHEP import CLHEP_2_4_7_1
+from .cppgsl import cppgsl_3_1_0
+from .HepPDT import HepPDT_2_06_01
+from .vdt import vdt_0_4_4
+from .ROOT import ROOT_v6_32_02

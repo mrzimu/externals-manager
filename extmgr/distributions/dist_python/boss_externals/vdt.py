@@ -1,8 +1,9 @@
 from abc import abstractmethod
+from pathlib import Path
 from extmgr import BasePackage, CmdList
 
 
-class Gaudi(BasePackage):
+class vdt(BasePackage):
     @property
     @abstractmethod
     def version(self) -> str:
@@ -10,30 +11,26 @@ class Gaudi(BasePackage):
 
     @property
     @abstractmethod
-    def git_tag(self) -> str:
+    def url(self) -> str:
         raise NotImplementedError
 
     @property
-    def git_url(self) -> str:
-        return 'https://gitlab.cern.ch/gaudi/Gaudi.git'
-
-    @property
     def name(self) -> str:
-        return 'Gaudi'
+        return 'vdt'
 
     def prepare_src_steps(self) -> list[tuple[str, CmdList]]:
-        clone_cmds = self.clone_git_repo(self.git_url, self.git_tag)
+        archive_file = self.build_dir / Path(self.url).name
 
-        patch_file = self.patch_dir / f'{self.name}-{self.version}.patch'
-        patch_cmds = self.apply_patch(patch_file)
+        download_cmds = self.download_file(self.url, archive_file)
+        extract_cmds = self.extract_archive_to_source(archive_file)
 
         return [
-            ('clone', clone_cmds),
-            # ('patch', patch_cmds)
+            ('download', download_cmds),
+            ('extract', extract_cmds)
         ]
 
     def build_steps(self) -> list[tuple[str, CmdList]]:
-        config_cmds = self.cmake_config({'GAUDI_ENABLE_GAUDIALG': 'ON'})
+        config_cmds = self.cmake_config()
         build_cmds = self.cmake_build()
 
         return [
@@ -44,10 +41,7 @@ class Gaudi(BasePackage):
     def setup_cmds(self) -> dict[str, list[str]]:
         env_to_append = [("INCLUDE", f"{self.install_dir}/include"),
                          ("LIB", f"{self.install_dir}/lib"),
-                         ("PATH", f"{self.install_dir}/bin"),
-                         ("LD_LIBRARY_PATH", f"{self.install_dir}/lib"),
-                         ("CMAKE_PREFIX_PATH", f"{self.install_dir}/lib/cmake/Gaudi"),
-                         ("PYTHONPATH", f"{self.install_dir}/python")]
+                         ("LD_LIBRARY_PATH", f"{self.install_dir}/lib")]
 
         sh_cmds = self.append_envvar(env_to_append, 'sh')
         csh_cmds = self.append_envvar(env_to_append, 'csh')
@@ -56,9 +50,11 @@ class Gaudi(BasePackage):
                 'csh': csh_cmds}
 
 
-class Gaudi_v38r2(Gaudi):
+class vdt_0_4_4(vdt):
     @property
-    def version(self) -> str: return 'v38r2'
+    def version(self) -> str:
+        return '0.4.4'
 
     @property
-    def git_tag(self) -> str: return 'v38r2'
+    def url(self) -> str:
+        return 'https://lcgpackages.web.cern.ch/tarFiles/sources/vdt-0.4.4.tar.gz'
