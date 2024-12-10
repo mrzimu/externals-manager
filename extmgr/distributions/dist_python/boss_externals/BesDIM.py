@@ -37,9 +37,11 @@ class BesDIM(BasePackage):
         ]
 
     def setup_cmds(self) -> dict[str, list[str]]:
+        lib_dir = self.install_dir / 'lib64' if (self.install_dir / 'lib64').exists() else self.install_dir / 'lib'
+
         env_to_append = [("INCLUDE", f"{self.install_dir}/include"),
-                         ("LIB", f"{self.install_dir}/lib64"),
-                         ("LD_LIBRARY_PATH", f"{self.install_dir}/lib64")]
+                         ("LIB", f"{lib_dir}"),
+                         ("LD_LIBRARY_PATH", f"{lib_dir}")]
 
         sh_cmds = self.append_envvar(env_to_append, 'sh')
         csh_cmds = self.append_envvar(env_to_append, 'csh')
