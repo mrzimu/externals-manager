@@ -13,10 +13,11 @@ distributions = [
                      ('cppgsl', '3.1.0'),
                      ('HepPDT', '2.06.01'),
                      ('vdt', '0.4.4'),
-                     ('root', 'v6.32.02')],
+                     ('root', 'v6.32.02'),
+                     ('rangev3', '0.11.0')],
         'dependencies': {'AIDA': ['Boost'],
                          'CLHEP': ['cppgsl'],
-                         'root': ['AIDA', 'CLHEP', 'HepPDT', 'vdt', 'Boost']}
+                         'root': ['AIDA', 'CLHEP', 'HepPDT', 'vdt', 'Boost', 'rangev3']}
 
     },
 

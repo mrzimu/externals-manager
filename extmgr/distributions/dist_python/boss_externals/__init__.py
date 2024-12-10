@@ -12,3 +12,4 @@ from .cppgsl import cppgsl_3_1_0
 from .HepPDT import HepPDT_2_06_01
 from .vdt import vdt_0_4_4
 from .ROOT import ROOT_v6_32_02
+from .rangev3 import rangev3_0_11_0
